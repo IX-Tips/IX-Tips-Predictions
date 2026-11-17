@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 from .constants import COMPETITIONS, TRAINING_CACHE_TIMEOUT
 from .models import MatchPrediction, TopPick
-from .fixture_sources import fetch_fixture_matches_by_date
+from .fixture_sources import fetch_fixture_matches_by_date, fetch_upcoming_fixture_groups
 from .utils import (
     fetch_and_cache_team_metadata,
     fetch_matches_by_date,
@@ -43,11 +43,14 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
 
     logger.info("Running prediction for %s on %s", competition_code, match_date or "auto")
     if not match_date:
-        match_dates_to_use = find_upcoming_match_dates(
-            fetch_fixture_matches_by_date, None, competition_code, days_ahead=30,
+        fixtures_by_date = fetch_upcoming_fixture_groups(
+            None, competition_code, days_ahead=45,
         )
     else:
-        match_dates_to_use = [match_date]
+        fixtures_by_date = {
+            str(match_date)[:10]: fetch_fixture_matches_by_date(None, competition_code, match_date)
+        }
+    match_dates_to_use = sorted(fixtures_by_date)
 
     if not match_dates_to_use:
         result = {"competition": competition_code, "status": "no_fixtures", "training_entries": 0, "fixture_count": 0, "saved_predictions": 0, "dates_checked": []}
@@ -77,7 +80,7 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
     dates_with_fixtures = []
     for match_date_to_use in match_dates_to_use:
         logger.info("Processing %s for %s", competition_code, match_date_to_use)
-        matches = fetch_fixture_matches_by_date(None, competition_code, match_date_to_use)
+        matches = fixtures_by_date.get(match_date_to_use) or []
         if not matches:
             logger.warning("No fixtures for %s on %s", competition_code, match_date_to_use)
             continue
