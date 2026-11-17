@@ -161,38 +161,49 @@ def fetch_upcoming_fixture_groups(api_key, competition_code, days_ahead=45):
     """
     Discover upcoming fixtures in bulk where a season feed is available.
 
-    open-matchday publishes one season CSV, so scanning 45 separate dates
-    wastes time and obscures feed failures. Read its season feed once, derive
-    the dates that actually contain fixtures, then merge those dates through
-    the normal provider chain. Other competitions retain the date-query
-    fallback.
+    Season CSV providers are queried once, rather than being called once for
+    every calendar day. Only the dates with scheduled matches are then passed
+    through the regular provider chain to merge and deduplicate sources.
     """
     from datetime import date, timedelta
     from . import providers
 
     today = date.today()
     last_day = today + timedelta(days=max(1, int(days_ahead)))
+    primary = get_provider(competition_code)
+    bulk_provider = None
+    season_matches = []
 
-    if supports_open_matchday(competition_code):
-        try:
+    try:
+        if supports_open_matchday(competition_code):
+            bulk_provider = "OM"
             season_matches = providers._om_current_matches(competition_code)
+        elif primary == "UK" and competition_code in providers.FOOTBALL_DATA_UK_CODES:
+            bulk_provider = "UK"
+            season_matches = providers._uk_current_matches(competition_code)
+        elif primary == "LF" and competition_code in LIVEFOOTBALL_LEAGUE_IDS:
+            bulk_provider = "LF"
+            season_matches = providers._lf_season_matches(competition_code)
+
+        if bulk_provider:
             candidate_dates = sorted({
                 (match.get("utcDate") or "")[:10]
                 for match in season_matches
-                if match.get("status") != "FINISHED"
+                if match.get("status") not in {"FINISHED", "CANCELLED", "POSTPONED"}
                 and (match.get("utcDate") or "")[:10]
                 and today.isoformat() <= (match.get("utcDate") or "")[:10] <= last_day.isoformat()
                 and _fixture_key(match) is not None
             })
+            candidate_count = sum(
+                1 for match in season_matches
+                if match.get("status") not in {"FINISHED", "CANCELLED", "POSTPONED"}
+                and (match.get("utcDate") or "")[:10] in candidate_dates
+                and _fixture_key(match) is not None
+            )
             record_provider_diagnostic(
-                competition_code, "OM",
-                "fixtures_found" if candidate_dates else "empty_response",
-                fixture_count=sum(
-                    1 for match in season_matches
-                    if match.get("status") != "FINISHED"
-                    and (match.get("utcDate") or "")[:10] in candidate_dates
-                    and _fixture_key(match) is not None
-                ),
+                competition_code, bulk_provider,
+                "fixtures_found" if candidate_count else "empty_response",
+                fixture_count=candidate_count,
                 match_date=f"{today.isoformat()}..{last_day.isoformat()}",
             )
             grouped = {}
@@ -202,15 +213,16 @@ def fetch_upcoming_fixture_groups(api_key, competition_code, days_ahead=45):
                     grouped[match_day] = merged
             if grouped:
                 return grouped
-        except Exception as exc:
+    except Exception as exc:
+        if bulk_provider:
             record_provider_diagnostic(
-                competition_code, "OM", "error",
+                competition_code, bulk_provider, "error",
                 error=exc, match_date=f"{today.isoformat()}..{last_day.isoformat()}",
             )
-            logger.exception("Bulk fixture discovery failed for %s", competition_code)
+        logger.exception("Bulk fixture discovery failed for %s", competition_code)
 
-    # Fallback for leagues without a season CSV, or when the bulk source has
-    # no published upcoming fixtures.
+    # Fallback for providers without a season feed, or when the bulk feed has
+    # no published fixtures in the requested window.
     from .utils import find_upcoming_match_dates
     dates = find_upcoming_match_dates(
         fetch_fixture_matches_by_date, api_key, competition_code,
