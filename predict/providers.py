@@ -17,6 +17,7 @@ import os
 
 import requests
 from django.core.cache import cache
+from django.utils import timezone
 
 from .constants import (
     API_TOKEN,
@@ -348,10 +349,23 @@ def af_fetch_teams(competition_code):
 # derive fixtures-by-date, training data, and standings from it — so each league
 # costs ~1 request/day, fitting the 100/month free quota.
 
+def _record_lf_request_health(state):
+    """Best-effort LF request diagnostics; cache outages must not break provider calls."""
+    try:
+        cache.set("provider_request_health::LF", state, timeout=60 * 60 * 24)
+    except Exception as exc:
+        logger.warning("Unable to cache Live-Football-Data diagnostics: %s", exc)
+
+
 def _lf_get(path):
     """Call Live-Football-Data and return the `response` dict (or {})."""
     if not LF_KEY:
         logger.info("LIVEFOOTBALL_KEY not set; skipping call %s", path)
+        _record_lf_request_health({
+            "status": "not_configured",
+            "last_error": "LIVEFOOTBALL_KEY is not set",
+            "checked_at": timezone.now().isoformat(),
+        })
         return {}
     headers = {"x-rapidapi-host": LF_HOST, "x-rapidapi-key": LF_KEY}
     try:
@@ -360,11 +374,27 @@ def _lf_get(path):
         data = r.json()
     except Exception as exc:
         logger.warning("Live-Football-Data request failed: %s error=%s", path, exc)
+        _record_lf_request_health({
+            "status": "error",
+            "last_error": str(exc)[:500],
+            "checked_at": timezone.now().isoformat(),
+        })
         return {}
     if data.get("status") not in (None, "success"):
-        logger.warning("Live-Football-Data non-success for %s: %s", path, data.get("status"))
+        message = str(data.get("message") or data.get("status"))
+        logger.warning("Live-Football-Data non-success for %s: %s", path, message)
+        _record_lf_request_health({
+            "status": "error",
+            "last_error": message[:500],
+            "checked_at": timezone.now().isoformat(),
+        })
+    else:
+        _record_lf_request_health({
+            "status": "ok",
+            "last_error": None,
+            "checked_at": timezone.now().isoformat(),
+        })
     return data.get("response", {}) or {}
-
 
 def _fotmob_logo(team_id):
     return f"https://images.fotmob.com/image_resources/logo/teamlogo/{team_id}.png" if team_id else None
