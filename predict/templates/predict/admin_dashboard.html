@@ -115,8 +115,8 @@
             <td>{% if diag.configured %}<span class="pill enabled">Configured</span>{% else %}<span class="pill missing">Not configured</span><div class="muted">{{ diag.credential_name }}</div>{% endif %}</td>
             <td><span class="diag-status {{ diag.status }}">{{ diag.status|default:"never_checked"|title|cut:"_" }}</span></td>
             <td>{{ diag.fixture_count|default:0 }}</td>
-            <td>{{ diag.last_checked|default:"Never"|date:"d M Y H:i" }}</td>
-            <td>{{ diag.last_success|default:"—"|date:"d M Y H:i" }}</td>
+            <td>{{ diag.last_checked|default:"Never" }}</td>
+            <td>{{ diag.last_success|default:"—" }}</td>
             <td>{% if diag.last_error %}<div class="diag-error">{{ diag.last_error }}</div>{% elif diag.last_match_date %}<span class="muted">Checked {{ diag.last_match_date }}</span>{% elif not diag.configured %}<span class="muted">Set the required environment variable on the server.</span>{% else %}<span class="muted">No attempt recorded yet.</span>{% endif %}</td>
           </tr>
           {% endfor %}
