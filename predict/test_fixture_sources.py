@@ -45,3 +45,33 @@ class FixtureAggregationTests(TestCase):
     @patch("predict.fixture_sources._dispatch_explicit_provider", return_value=[])
     def test_empty_primary_response_returns_empty_list(self, dispatch, provider_order):
         self.assertEqual(fetch_fixture_matches_by_date(None, "BEL", "2026-11-10"), [])
+
+
+class ProviderDiagnosticsTests(TestCase):
+    @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
+    @patch("predict.fixture_sources.record_provider_diagnostic")
+    @patch("predict.fixture_sources._provider_order", return_value=["LF"])
+    @patch("predict.fixture_sources._dispatch_explicit_provider")
+    def test_records_fixture_count_for_successful_provider(self, dispatch, provider_order, record, configuration):
+        dispatch.return_value = [{"utcDate": "2026-11-21T15:00:00Z", "homeTeam": {"name": "Alpha"}, "awayTeam": {"name": "Beta"}}]
+        fetch_fixture_matches_by_date(None, "SAU", "2026-11-21")
+        record.assert_called_once()
+        self.assertEqual(record.call_args.args[2], "fixtures_found")
+        self.assertEqual(record.call_args.kwargs["fixture_count"], 1)
+
+    @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
+    @patch("predict.fixture_sources.record_provider_diagnostic")
+    @patch("predict.fixture_sources._provider_order", return_value=["LF"])
+    @patch("predict.fixture_sources._dispatch_explicit_provider", return_value=[])
+    def test_records_empty_provider_response(self, dispatch, provider_order, record, configuration):
+        fetch_fixture_matches_by_date(None, "SAU", "2026-11-21")
+        record.assert_called_once()
+        self.assertEqual(record.call_args.args[2], "empty_response")
+
+    @patch("predict.fixture_sources.LF_KEY", "")
+    @patch("predict.fixture_sources.LIVEFOOTBALL_LEAGUE_IDS", {"SAU": 536})
+    def test_lf_configuration_requires_key_without_exposing_value(self):
+        from predict.fixture_sources import provider_configuration
+        configured, label = provider_configuration("LF", "SAU")
+        self.assertFalse(configured)
+        self.assertEqual(label, "LIVEFOOTBALL_KEY")
