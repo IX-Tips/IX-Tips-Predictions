@@ -1477,6 +1477,7 @@ def admin_task_dashboard(request):
     """Staff operations dashboard: compare data, fixtures and saved predictions."""
     from django.http import HttpResponseForbidden
     from .providers import get_provider
+    from .fixture_sources import _provider_order, get_provider_diagnostic, provider_configuration
 
     if not request.user.is_staff:
         return HttpResponseForbidden("Staff access is required.")
@@ -1523,6 +1524,21 @@ def admin_task_dashboard(request):
         upcoming_count = qs.filter(match_date__gte=today).exclude(status="FINISHED").count()
         latest = qs.order_by("-match_date").values_list("match_date", flat=True).first()
         provider = get_provider(code)
+        diagnostics = []
+        for attempted_provider in _provider_order(code):
+            configured, credential_name = provider_configuration(attempted_provider, code)
+            latest = get_provider_diagnostic(code, attempted_provider) or {}
+            diagnostics.append({
+                "provider": attempted_provider,
+                "configured": configured,
+                "credential_name": credential_name,
+                "status": latest.get("status", "never_checked"),
+                "fixture_count": latest.get("fixture_count", 0),
+                "last_checked": latest.get("last_checked"),
+                "last_success": latest.get("last_success"),
+                "last_match_date": latest.get("last_match_date"),
+                "last_error": latest.get("last_error"),
+            })
 
         totals["training_entries"] += training_entries
         totals["predictions"] += prediction_count
@@ -1536,6 +1552,7 @@ def admin_task_dashboard(request):
             "code": code,
             "name": name,
             "provider": provider,
+            "provider_diagnostics": diagnostics,
             "training_cached": df is not None,
             "training_entries": training_entries,
             "prediction_count": prediction_count,
