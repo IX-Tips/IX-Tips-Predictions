@@ -15,9 +15,10 @@ class FixtureAggregationTests(TestCase):
             "score": {"fullTime": {"home": None, "away": None}},
         }
 
+    @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
     @patch("predict.fixture_sources._provider_order", return_value=["UK", "AF"])
     @patch("predict.fixture_sources._dispatch_explicit_provider")
-    def test_tries_fallback_and_deduplicates_same_fixture(self, dispatch, provider_order):
+    def test_tries_fallback_and_deduplicates_same_fixture(self, dispatch, provider_order, configuration):
         second = {
             **self.fixture,
             "id": 12345,
@@ -31,9 +32,10 @@ class FixtureAggregationTests(TestCase):
         self.assertEqual(dispatch.call_count, 2)
         self.assertEqual(matches[0]["id"], "uk-1")
 
+    @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
     @patch("predict.fixture_sources._provider_order", return_value=["UK", "AF"])
     @patch("predict.fixture_sources._dispatch_explicit_provider")
-    def test_provider_failure_does_not_block_fallback(self, dispatch, provider_order):
+    def test_provider_failure_does_not_block_fallback(self, dispatch, provider_order, configuration):
         dispatch.side_effect = [RuntimeError("provider offline"), [self.fixture]]
 
         matches = fetch_fixture_matches_by_date(None, "BEL", "2026-11-10")
