@@ -57,10 +57,28 @@ def provider_configuration(provider, competition_code):
     return False, "Unknown provider"
 
 
+def _diagnostic_cache_get(key, default=None):
+    """Diagnostics must never interrupt fixture retrieval if cache storage is unavailable."""
+    try:
+        return cache.get(key, default)
+    except Exception as exc:
+        logger.warning("Provider diagnostics cache read failed for %s: %s", key, exc)
+        return default
+
+
+def _diagnostic_cache_set(key, value, timeout=PROVIDER_DIAGNOSTIC_TTL):
+    try:
+        cache.set(key, value, timeout=timeout)
+        return True
+    except Exception as exc:
+        logger.warning("Provider diagnostics cache write failed for %s: %s", key, exc)
+        return False
+
+
 def record_provider_diagnostic(competition_code, provider, status, fixture_count=0, error=None, match_date=None):
-    """Persist the latest fixture-provider attempt for the staff diagnostics page."""
+    """Persist the latest provider attempt without allowing cache failures to break predictions."""
     key = provider_diagnostic_key(competition_code, provider)
-    previous = cache.get(key, {}) or {}
+    previous = _diagnostic_cache_get(key, {}) or {}
     now = timezone.now().isoformat()
     state = {
         "competition": competition_code,
@@ -74,12 +92,12 @@ def record_provider_diagnostic(competition_code, provider, status, fixture_count
     }
     if status == "fixtures_found" and fixture_count:
         state["last_success"] = now
-    cache.set(key, state, timeout=PROVIDER_DIAGNOSTIC_TTL)
+    _diagnostic_cache_set(key, state, timeout=PROVIDER_DIAGNOSTIC_TTL)
     return state
 
 
 def get_provider_diagnostic(competition_code, provider):
-    return cache.get(provider_diagnostic_key(competition_code, provider))
+    return _diagnostic_cache_get(provider_diagnostic_key(competition_code, provider))
 
 
 def _provider_order(competition_code):
@@ -172,7 +190,7 @@ def fetch_fixture_matches_by_date(api_key, competition_code, match_date):
             continue
 
         valid_count = sum(1 for match in (matches or []) if _fixture_key(match) is not None)
-        request_health = cache.get("provider_request_health::LF", {}) if provider == "LF" else {}
+        request_health = _diagnostic_cache_get("provider_request_health::LF", {}) if provider == "LF" else {}
         recent_lf_error = False
         if request_health.get("status") == "error" and request_health.get("checked_at"):
             try:
