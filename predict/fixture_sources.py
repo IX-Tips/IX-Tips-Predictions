@@ -61,10 +61,12 @@ def _team_key(value):
 def _fixture_key(match):
     home = (match.get("homeTeam") or {}).get("name")
     away = (match.get("awayTeam") or {}).get("name")
-    kickoff = (match.get("utcDate") or "")[:16]
-    if not home or not away or not kickoff:
+    match_day = (match.get("utcDate") or "")[:10]
+    if not home or not away or not match_day:
         return None
-    return kickoff, _team_key(home), _team_key(away)
+    # Provider feeds may express the same kickoff in different time zones.
+    # A team pair can only meet once in a competition on a given match day.
+    return match_day, _team_key(home), _team_key(away)
 
 
 def _has_result(match):
