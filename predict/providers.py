@@ -26,6 +26,7 @@ from .constants import (
     COMPETITION_PROVIDERS,
     FOOTBALL_DATA_UK_CODES,
     LIVEFOOTBALL_LEAGUE_IDS,
+    OPEN_MATCHDAY_COMPETITIONS,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,18 @@ AF_KEY = os.environ.get("APIFOOTBALL_KEY", "")
 LF_HOST = os.environ.get("LIVEFOOTBALL_HOST", "free-api-live-football-data.p.rapidapi.com")
 LF_KEY = os.environ.get("LIVEFOOTBALL_KEY", "")
 LF_SEASON_CACHE_TIMEOUT = 60 * 60 * 25  # one daily refresh; reads hit cache
+
+# open-matchday is a public, daily CSV compilation. Its stated terms permit
+# informational/non-commercial projects with attribution only.
+OM_BASE_URL = os.environ.get(
+    "OPEN_MATCHDAY_BASE_URL",
+    "https://raw.githubusercontent.com/oladeeayo/open-matchday/master/data",
+).rstrip("/")
+OM_ENABLED = os.environ.get("OPEN_MATCHDAY_ENABLED", "true").strip().lower() in {
+    "1", "true", "yes", "on"
+}
+OM_CACHE_TIMEOUT = 60 * 60 * 8
+OM_FIXTURE_CACHE_TIMEOUT = 60 * 60 * 4
 
 # API-Football fixture status short codes -> football-data status strings
 _AF_FINISHED = {"FT", "AET", "PEN", "AWD", "WO"}
@@ -75,6 +88,7 @@ _PROVIDER_DISPATCH = {
     "AF": {},
     "LF": {},
     "UK": {},
+    "OM": {},
 }
 
 
@@ -729,6 +743,172 @@ def uk_fetch_teams(competition_code):
             names.add(m["awayTeam"]["name"])
     teams = [{"name": n, "shortName": n, "crest": None} for n in sorted(names)]
     return None, teams
+
+
+
+
+# ══ open-matchday — provider "OM" (non-commercial fallback) ══════════════════
+# CSV schema: date,time,home,away,ft_home,ft_away,... . Empty score cells are
+# unavailable values, never zero. The feed publishes the current season only.
+# This is not a live-score source.
+
+def supports_open_matchday(competition_code):
+    return OM_ENABLED and competition_code in OPEN_MATCHDAY_COMPETITIONS
+
+
+def _om_season_code(season_year):
+    """Return the current published season code (e.g. 2026 -> '2627')."""
+    from datetime import date
+    today = date.today()
+    current_start = today.year if today.month >= 7 else today.year - 1
+    if season_year is not None and int(season_year) != current_start:
+        return None
+    return f"{str(current_start)[-2:]}{str(current_start + 1)[-2:]}"
+
+
+def _om_get_csv(competition_code, kind, season_code):
+    """Fetch one published CSV and return its rows, cached to avoid repeat downloads."""
+    import csv
+    import io
+
+    folder = OPEN_MATCHDAY_COMPETITIONS.get(competition_code)
+    if not folder or not supports_open_matchday(competition_code):
+        return []
+    if kind not in {"results", "fixtures"}:
+        return []
+    cache_key = f"om_csv::{competition_code}::{kind}::{season_code}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    url = f"{OM_BASE_URL}/{folder}/{kind}_{season_code}.csv"
+    try:
+        response = requests.get(
+            url,
+            headers={"User-Agent": "IX-Tips-Predictions/1.0 (non-commercial research)"},
+            timeout=20,
+        )
+        if response.status_code == 404:
+            rows = []
+        else:
+            response.raise_for_status()
+            rows = list(csv.DictReader(io.StringIO(response.text.lstrip("\ufeff"))))
+    except Exception as exc:
+        logger.warning("open-matchday fetch failed for %s %s: %s", competition_code, kind, exc)
+        rows = []
+
+    timeout = OM_CACHE_TIMEOUT if kind == "results" else OM_FIXTURE_CACHE_TIMEOUT
+    cache.set(cache_key, rows, timeout=timeout)
+    return rows
+
+
+def _om_int(value):
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _om_row_to_match(row, competition_code, season_code, kind):
+    home = (row.get("home") or "").strip()
+    away = (row.get("away") or "").strip()
+    match_day = (row.get("date") or "").strip()
+    if not home or not away or not match_day:
+        return None
+
+    kickoff = (row.get("time") or "").strip()
+    if kickoff and ":" in kickoff:
+        # The feed documents a fixed CET-1 convention (UTC+01:00).
+        utc_date = f"{match_day}T{kickoff[:5]}:00+01:00"
+    else:
+        utc_date = f"{match_day}T12:00:00Z"
+
+    home_goals = _om_int(row.get("ft_home")) if kind == "results" else None
+    away_goals = _om_int(row.get("ft_away")) if kind == "results" else None
+    finished = home_goals is not None and away_goals is not None
+    return {
+        "id": f"OM-{competition_code}-{season_code}-{match_day}-{home}-{away}",
+        "utcDate": utc_date,
+        "status": "FINISHED" if finished else "TIMED",
+        "homeTeam": {"name": home, "crest": None},
+        "awayTeam": {"name": away, "crest": None},
+        "score": {
+            "fullTime": {"home": home_goals, "away": away_goals},
+            "halfTime": {
+                "home": _om_int(row.get("ht_home")),
+                "away": _om_int(row.get("ht_away")),
+            },
+        },
+    }
+
+
+def _om_current_matches(competition_code):
+    """Return current-season results plus fixtures, preferring finished results."""
+    if not supports_open_matchday(competition_code):
+        return []
+    from datetime import date
+    today = date.today()
+    current_start = today.year if today.month >= 7 else today.year - 1
+    season_code = _om_season_code(current_start)
+    if not season_code:
+        return []
+
+    cache_key = f"om_current_matches::{competition_code}::{season_code}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    matches = []
+    for kind in ("results", "fixtures"):
+        rows = _om_get_csv(competition_code, kind, season_code)
+        matches.extend(
+            item for item in (
+                _om_row_to_match(row, competition_code, season_code, kind)
+                for row in rows
+            ) if item
+        )
+
+    by_key = {}
+    for match in matches:
+        key = (
+            (match.get("utcDate") or "")[:10],
+            (match.get("homeTeam") or {}).get("name", "").casefold(),
+            (match.get("awayTeam") or {}).get("name", "").casefold(),
+        )
+        existing = by_key.get(key)
+        if existing is None or (
+            match.get("status") == "FINISHED" and existing.get("status") != "FINISHED"
+        ):
+            by_key[key] = match
+    result = sorted(
+        by_key.values(),
+        key=lambda item: (item.get("utcDate") or "", (item.get("homeTeam") or {}).get("name") or ""),
+    )
+    cache.set(cache_key, result, timeout=OM_FIXTURE_CACHE_TIMEOUT)
+    return result
+
+
+@_register(providers=["OM"], operation="fetch_matches_by_date")
+def om_fetch_matches_by_date(competition_code, match_date):
+    day = str(match_date)[:10]
+    return [
+        match for match in _om_current_matches(competition_code)
+        if (match.get("utcDate") or "")[:10] == day
+    ]
+
+
+@_register(providers=["OM"], operation="fetch_matches_by_season")
+def om_fetch_matches_by_season(competition_code, season_year):
+    """Return current published-season results; older seasons are not supplied."""
+    season_code = _om_season_code(season_year)
+    if not season_code or not supports_open_matchday(competition_code):
+        return []
+    return [
+        match for match in _om_current_matches(competition_code)
+        if match.get("status") == "FINISHED"
+    ]
 
 
 # ══ FD provider — thin wrappers around football-data.org's REST API ══════════

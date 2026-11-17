@@ -103,6 +103,26 @@ FOOTBALL_DATA_UK_CODES = {
     "USA": ("extra", "USA"),
 }
 
+
+# open-matchday (OM) — public daily CSV compilation for non-commercial use.
+# Exact folder names from the open-matchday competition index.
+# The feed currently publishes the current season only; it is a fallback source.
+OPEN_MATCHDAY_COMPETITIONS = {
+    "BEL": "BEL_1_pro-league",
+    "TUR": "TUR_1_super-lig",
+    "GRE": "GRE_1_super-league",
+    "SCO": "SCO_1_premiership",
+    "GER2": "GER_2_2-bundesliga",
+    "ITA2": "ITA_2_serie-b",
+    "ESP2": "ESP_2_segunda-division",
+    "FRA2": "FRA_2_ligue-2",
+    "ARG": "ARG_1_liga-profesional",
+    "MEX": "MEX_1_liga-mx",
+    "USA": "USA_1_mls",
+    "JPN": "JPN_1_j1-league",
+    "CHN": "CHN_1_super-league",
+}
+
 # API-Football numeric league IDs (verified against the account on 2026-05-27).
 # Optional API-Football league IDs can be supplied without a code change:
 # APIFOOTBALL_LEAGUE_IDS='{"BEL": 144, "TUR": 203}'

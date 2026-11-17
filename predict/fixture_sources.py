@@ -14,7 +14,7 @@ import logging
 import os
 import re
 
-from .providers import dispatch_provider, get_provider, AF_KEY
+from .providers import dispatch_provider, get_provider, AF_KEY, supports_open_matchday
 from .constants import APIFOOTBALL_LEAGUE_IDS
 
 logger = logging.getLogger(__name__)
@@ -38,13 +38,16 @@ def _provider_order(competition_code):
     providers = []
     for provider in configured:
         provider = str(provider).strip().upper()
-        if provider in {"FD", "UK", "LF", "AF"} and provider not in providers:
+        if provider in {"FD", "UK", "LF", "AF", "OM"} and provider not in providers:
             providers.append(provider)
 
     # API-Football is an independent fallback only when both its key and
     # competition league ID are configured. It never replaces the primary.
     if AF_KEY and competition_code in APIFOOTBALL_LEAGUE_IDS and "AF" not in providers:
         providers.append("AF")
+    # The public open-matchday feed is last so existing provider data wins.
+    if supports_open_matchday(competition_code) and "OM" not in providers:
+        providers.append("OM")
     return providers
 
 
@@ -58,10 +61,12 @@ def _team_key(value):
 def _fixture_key(match):
     home = (match.get("homeTeam") or {}).get("name")
     away = (match.get("awayTeam") or {}).get("name")
-    kickoff = (match.get("utcDate") or "")[:16]
-    if not home or not away or not kickoff:
+    match_day = (match.get("utcDate") or "")[:10]
+    if not home or not away or not match_day:
         return None
-    return kickoff, _team_key(home), _team_key(away)
+    # Provider feeds may express the same kickoff in different time zones.
+    # A team pair can only meet once in a competition on a given match day.
+    return match_day, _team_key(home), _team_key(away)
 
 
 def _has_result(match):

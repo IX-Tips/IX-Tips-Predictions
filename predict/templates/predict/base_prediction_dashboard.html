@@ -263,6 +263,12 @@
 
 {% block extra_scripts %}{% endblock %}
 
+<footer class="text-center py-3 px-3" style="font-size:0.75rem;color:var(--text-secondary,#64748b);">
+  Supplemental football fixtures and results for selected competitions:
+  <a href="https://github.com/oladeeayo/open-matchday" target="_blank" rel="noopener noreferrer">open-matchday</a>.
+  Daily, non-live data; used with attribution for non-commercial purposes.
+</footer>
+
 <!-- Mobile bottom nav -->
 <nav class="mobile-bottom-nav" style="display:none; position:fixed; bottom:0; left:0; right:0; z-index:600; background:var(--card-bg,#fff); border-top:1px solid var(--border-color,#e2e8f0); padding:6px 0 env(safe-area-inset-bottom,6px); justify-content:space-around; align-items:center;">
   <a href="{% url 'predictions_view' %}" class="bnav-link {% if request.resolver_match.url_name == 'predictions_view' %}active{% endif %}"><i class='bx bx-football'></i>Predictions</a>
