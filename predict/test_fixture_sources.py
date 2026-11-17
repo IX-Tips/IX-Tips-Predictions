@@ -77,3 +77,59 @@ class ProviderDiagnosticsTests(TestCase):
         configured, label = provider_configuration("LF", "SAU")
         self.assertFalse(configured)
         self.assertEqual(label, "LIVEFOOTBALL_KEY")
+
+
+
+class BulkFixtureDiscoveryTests(TestCase):
+    @patch("predict.fixture_sources.fetch_fixture_matches_by_date")
+    @patch("predict.providers._om_current_matches")
+    @patch("predict.fixture_sources.supports_open_matchday", return_value=True)
+    def test_bulk_feed_discovers_fixture_dates_without_scanning_every_day(
+        self, supports, om_matches, fetch_by_date
+    ):
+        om_matches.return_value = [
+            {
+                "utcDate": "2026-11-21T11:30:00+01:00",
+                "status": "TIMED",
+                "homeTeam": {"name": "Alpha"},
+                "awayTeam": {"name": "Beta"},
+            },
+            {
+                "utcDate": "2026-11-22T14:00:00+01:00",
+                "status": "TIMED",
+                "homeTeam": {"name": "Gamma"},
+                "awayTeam": {"name": "Delta"},
+            },
+            {
+                "utcDate": "2026-11-10T15:00:00Z",
+                "status": "FINISHED",
+                "homeTeam": {"name": "Old"},
+                "awayTeam": {"name": "Match"},
+            },
+        ]
+        fetch_by_date.side_effect = lambda key, code, day: [
+            {
+                "utcDate": f"{day}T12:00:00Z",
+                "status": "TIMED",
+                "homeTeam": {"name": "Home"},
+                "awayTeam": {"name": "Away"},
+            }
+        ]
+
+        from predict.fixture_sources import fetch_upcoming_fixture_groups
+        grouped = fetch_upcoming_fixture_groups(None, "TUR", days_ahead=45)
+
+        self.assertEqual(list(grouped), ["2026-11-21", "2026-11-22"])
+        self.assertEqual(fetch_by_date.call_count, 2)
+        self.assertEqual(om_matches.call_count, 1)
+
+    @patch("predict.fixture_sources.fetch_fixture_matches_by_date")
+    @patch("predict.fixture_sources.supports_open_matchday", return_value=False)
+    def test_non_bulk_leagues_keep_date_lookup_fallback(self, supports, fetch_by_date):
+        fetch_by_date.side_effect = lambda key, code, day: (
+            [{"utcDate": f"{day}T12:00:00Z"}] if day.endswith("-21") else []
+        )
+        with patch("predict.utils.find_upcoming_match_dates", return_value=["2026-11-21"]):
+            from predict.fixture_sources import fetch_upcoming_fixture_groups
+            grouped = fetch_upcoming_fixture_groups(None, "SAU", days_ahead=45)
+        self.assertIn("2026-11-21", grouped)
