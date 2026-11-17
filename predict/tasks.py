@@ -41,56 +41,70 @@ def trigger_staggered_scheduling():
 def predict_next_fixtures_for_competition(competition_code, match_date=None):
     from .views import refresh_competition_odds
 
-    logger.info(f" Running prediction for {competition_code} on {match_date if match_date else 'auto'}")
-
+    logger.info("Running prediction for %s on %s", competition_code, match_date or "auto")
     if not match_date:
         match_dates_to_use = find_upcoming_match_dates(
-            fetch_fixture_matches_by_date,
-            None,
-            competition_code,
-            days_ahead=30,
+            fetch_fixture_matches_by_date, None, competition_code, days_ahead=30,
         )
-        if not match_dates_to_use:
-            return
     else:
         match_dates_to_use = [match_date]
+
+    if not match_dates_to_use:
+        result = {"competition": competition_code, "status": "no_fixtures", "training_entries": 0, "fixture_count": 0, "saved_predictions": 0, "dates_checked": []}
+        logger.warning("PREDICTION_COVERAGE %s", result)
+        return result
 
     df = cache.get(f"training_data_{competition_code}")
     if df is None:
         df = fetch_training_data_all_seasons(competition_code)
         cache.set(f"training_data_{competition_code}", df, timeout=TRAINING_CACHE_TIMEOUT)
 
-    if df.empty:
-        logger.warning(f" No training data for {competition_code}")
-        return
+    training_entries = len(df) if df is not None else 0
+    if df is None or df.empty:
+        result = {"competition": competition_code, "status": "no_training_data", "training_entries": training_entries, "fixture_count": 0, "saved_predictions": 0, "dates_checked": match_dates_to_use}
+        logger.warning("PREDICTION_COVERAGE %s", result)
+        return result
 
     model_bundle = get_or_train_model_bundle(competition_code)
     if model_bundle is None:
-        logger.warning(f" No model bundle available for {competition_code}")
-        return
-    model_home, model_away, model_context = model_bundle
+        result = {"competition": competition_code, "status": "model_unavailable", "training_entries": training_entries, "fixture_count": 0, "saved_predictions": 0, "dates_checked": match_dates_to_use}
+        logger.warning("PREDICTION_COVERAGE %s", result)
+        return result
 
+    model_home, model_away, model_context = model_bundle
     total_saved = 0
+    total_fixtures = 0
+    dates_with_fixtures = []
     for match_date_to_use in match_dates_to_use:
-        logger.info(f" Processing competition: {competition_code} for {match_date_to_use}")
+        logger.info("Processing %s for %s", competition_code, match_date_to_use)
         matches = fetch_fixture_matches_by_date(None, competition_code, match_date_to_use)
         if not matches:
-            logger.warning(f" No matches found for {competition_code} on {match_date_to_use}")
+            logger.warning("No fixtures for %s on %s", competition_code, match_date_to_use)
             continue
 
+        total_fixtures += len(matches)
+        dates_with_fixtures.append(match_date_to_use)
         predictions = save_predictions(
             matches, model_home, model_away, model_context,
-            match_date=match_date_to_use,
-            competition_code=competition_code
+            match_date=match_date_to_use, competition_code=competition_code,
         )
         total_saved += len(predictions)
         refresh_competition_odds(
-            competition_code,
-            force=True,
+            competition_code, force=True,
             match_dates=[date.fromisoformat(match_date_to_use)],
         )
 
-    logger.info(f" Saved {total_saved} predictions for {competition_code} across {len(match_dates_to_use)} date(s)")
+    result = {
+        "competition": competition_code,
+        "status": "generated" if total_saved else ("fixtures_found_no_predictions" if total_fixtures else "no_fixtures"),
+        "training_entries": training_entries,
+        "fixture_count": total_fixtures,
+        "saved_predictions": total_saved,
+        "dates_checked": match_dates_to_use,
+        "dates_with_fixtures": dates_with_fixtures,
+    }
+    logger.info("PREDICTION_COVERAGE %s", result)
+    return result
 
 @shared_task
 def cache_training_data():
