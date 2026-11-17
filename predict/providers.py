@@ -792,7 +792,7 @@ def _om_get_csv(competition_code, kind, season_code):
             rows = []
         else:
             response.raise_for_status()
-            rows = list(csv.DictReader(io.StringIO(response.text.lstrip("\\ufeff"))))
+            rows = list(csv.DictReader(io.StringIO(response.text.lstrip("\ufeff"))))
     except Exception as exc:
         logger.warning("open-matchday fetch failed for %s %s: %s", competition_code, kind, exc)
         rows = []
