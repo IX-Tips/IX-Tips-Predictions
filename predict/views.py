@@ -1472,12 +1472,27 @@ def regenerate_top_picks(request):
 # Remaining views (mostly unchanged) - results, training, admin dashboard, export, etc.
 # -------------------------
 @login_required
+@login_required
 def admin_task_dashboard(request):
-    tasks = PeriodicTask.objects.all()
+    """Staff operations dashboard: compare data, fixtures and saved predictions."""
+    from django.http import HttpResponseForbidden
+    from .providers import get_provider
+
+    if not request.user.is_staff:
+        return HttpResponseForbidden("Staff access is required.")
+
+    today = timezone.localdate()
+    tasks = PeriodicTask.objects.select_related("interval", "crontab").order_by("name")
     task_info = []
     for task in tasks:
-        args = json.loads(task.args or "[]")
-        kwargs = json.loads(task.kwargs or "{}")
+        try:
+            args = json.loads(task.args or "[]")
+        except (TypeError, ValueError):
+            args = []
+        try:
+            kwargs = json.loads(task.kwargs or "{}")
+        except (TypeError, ValueError):
+            kwargs = {}
         task_info.append({
             "name": task.name,
             "task": task.task,
@@ -1491,21 +1506,52 @@ def admin_task_dashboard(request):
             "last_triggered": task.date_changed,
         })
 
-    cache_info = []
-    for comp in COMPETITIONS:
-        key = f"training_data_{comp}"
-        df = cache.get(key)
-        cache_info.append({
-            "competition": comp,
-            "cached": df is not None,
-            "entries": len(df) if df is not None else 0
+    competition_rows = []
+    totals = {
+        "competitions": len(COMPETITIONS),
+        "training_entries": 0,
+        "predictions": 0,
+        "upcoming_predictions": 0,
+        "competitions_with_predictions": 0,
+        "competitions_without_upcoming": 0,
+    }
+    for code, name in COMPETITIONS.items():
+        df = cache.get(f"training_data_{code}")
+        training_entries = len(df) if df is not None else 0
+        qs = MatchPrediction.objects.filter(competition=code)
+        prediction_count = qs.count()
+        upcoming_count = qs.filter(match_date__gte=today).exclude(status="FINISHED").count()
+        latest = qs.order_by("-match_date").values_list("match_date", flat=True).first()
+        provider = get_provider(code)
+
+        totals["training_entries"] += training_entries
+        totals["predictions"] += prediction_count
+        totals["upcoming_predictions"] += upcoming_count
+        if prediction_count:
+            totals["competitions_with_predictions"] += 1
+        if not upcoming_count:
+            totals["competitions_without_upcoming"] += 1
+
+        competition_rows.append({
+            "code": code,
+            "name": name,
+            "provider": provider,
+            "training_cached": df is not None,
+            "training_entries": training_entries,
+            "prediction_count": prediction_count,
+            "upcoming_count": upcoming_count,
+            "latest_match_date": latest,
+            "coverage_status": "ready" if upcoming_count else ("trained" if training_entries else "missing"),
         })
 
+    recent_predictions = MatchPrediction.objects.order_by("-match_date")[:8]
     return render(request, "predict/admin_dashboard.html", {
         "tasks": task_info,
-        "cache_info": cache_info,
+        "competition_rows": competition_rows,
+        "totals": totals,
+        "recent_predictions": recent_predictions,
         "competitions": COMPETITIONS,
-        "today": timezone.localdate(),
+        "today": today,
     })
 
 

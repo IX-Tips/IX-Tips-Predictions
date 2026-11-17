@@ -109,9 +109,22 @@ class Command(BaseCommand):
         except Exception as e:
             self.stderr.write(f"[run_task] global ELO skipped: {e}")
 
+        summaries = []
         for comp in COMPETITIONS:
             self.stdout.write(f"[run_task] predicting {comp}")
             try:
-                tasks.predict_next_fixtures_for_competition(comp, match_date)
+                summary = tasks.predict_next_fixtures_for_competition(comp, match_date)
+                if summary:
+                    summaries.append(summary)
+                    self.stdout.write(
+                        "[run_task] coverage {competition}: status={status}, training={training_entries}, "
+                        "fixtures={fixture_count}, saved={saved_predictions}".format(**summary)
+                    )
             except Exception as exc:  # one competition failing shouldn't stop the rest
                 self.stderr.write(f"[run_task] {comp} failed: {exc}")
+        generated = sum(item.get("saved_predictions", 0) for item in summaries)
+        without_fixtures = [item["competition"] for item in summaries if item.get("status") == "no_fixtures"]
+        self.stdout.write(
+            f"[run_task] summary: {len(summaries)} competitions reported, {generated} predictions saved; "
+            f"no-fixture leagues: {', '.join(without_fixtures) if without_fixtures else 'none'}"
+        )

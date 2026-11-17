@@ -1,146 +1,135 @@
 {% extends "predict/base.html" %}
 {% load static %}
 
-{% block title %}Admin Dashboard - IX-Tips{% endblock %}
+{% block title %}Operations Dashboard | IX-Tips{% endblock %}
 
 {% block content %}
-<div class="dashboard-page admin-dashboard-page">
+<style>
+.admin-ops{max-width:1500px;margin:0 auto;padding:22px 0 48px;color:var(--text-color,#172033)}
+.admin-ops .ops-header{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:24px;flex-wrap:wrap}
+.admin-ops h1{font-size:clamp(1.55rem,3vw,2.15rem);font-weight:800;letter-spacing:-.04em;margin:0 0 6px}
+.admin-ops .muted{color:var(--text-secondary,#7b8495);font-size:.88rem}
+.admin-ops .eyebrow{font-size:.72rem;text-transform:uppercase;letter-spacing:.12em;font-weight:800;color:#64748b}
+.admin-ops .ops-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:22px}
+.admin-ops .metric,.admin-ops .panel{background:var(--light,#fff);border:1px solid rgba(148,163,184,.22);border-radius:16px;box-shadow:0 8px 26px rgba(15,23,42,.045)}
+.admin-ops .metric{padding:18px 20px}
+.admin-ops .metric-label{font-size:.78rem;color:var(--text-secondary,#64748b);font-weight:700}
+.admin-ops .metric-value{font-size:1.85rem;font-weight:850;letter-spacing:-.04em;margin:7px 0 2px}
+.admin-ops .panel{padding:20px;margin-bottom:18px;min-width:0}
+.admin-ops .panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.admin-ops h2{font-size:1.05rem;font-weight:800;margin:0}
+.admin-ops .table-wrap{overflow-x:auto}
+.admin-ops table{width:100%;border-collapse:collapse;min-width:760px;font-size:.84rem}
+.admin-ops th{text-align:left;color:var(--text-secondary,#64748b);font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;padding:11px 12px;border-bottom:1px solid rgba(148,163,184,.22);white-space:nowrap}
+.admin-ops td{padding:13px 12px;border-bottom:1px solid rgba(148,163,184,.13);vertical-align:middle}
+.admin-ops tr:last-child td{border-bottom:0}
+.admin-ops .comp-name{font-weight:750}
+.admin-ops .comp-code{font-size:.72rem;color:var(--text-secondary,#64748b);margin-left:5px}
+.admin-ops .pill{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;font-size:.7rem;font-weight:800;white-space:nowrap}
+.admin-ops .pill.ready{background:#dcfce7;color:#166534}.admin-ops .pill.trained{background:#fef3c7;color:#92400e}.admin-ops .pill.missing{background:#fee2e2;color:#991b1b}
+.admin-ops .pill.enabled{background:#dcfce7;color:#166534}.admin-ops .pill.disabled{background:#e2e8f0;color:#475569}
+.admin-ops .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.admin-ops .btn{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:9px;padding:9px 13px;font-size:.8rem;font-weight:750;text-decoration:none;cursor:pointer}
+.admin-ops .btn-primary{background:#2563eb;color:white}.admin-ops .btn-subtle{background:rgba(100,116,139,.12);color:inherit}
+.admin-ops .field{border:1px solid rgba(148,163,184,.4);border-radius:9px;padding:9px 11px;background:transparent;color:inherit;min-height:38px}
+.admin-ops .task-name{font-weight:750}.admin-ops .task-path{display:block;font-size:.7rem;color:var(--text-secondary,#64748b);margin-top:3px}
+.admin-ops .empty{padding:22px;text-align:center;color:var(--text-secondary,#64748b)}
+@media(max-width:1000px){.admin-ops .ops-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.admin-ops .ops-grid{grid-template-columns:1fr 1fr}.admin-ops .metric{padding:14px}.admin-ops .metric-value{font-size:1.45rem}.admin-ops .panel{padding:14px}}
+</style>
 
-  <div class="head-title">
-    <div class="left">
-      <h1>Admin Dashboard</h1>
-      <ul class="breadcrumb">
-        <li><a href="#">Dashboard</a></li>
-        <li><i class='bx bx-chevron-right'></i></li>
-        <li><a class="active" href="#">Tasks</a></li>
-      </ul>
+<div class="admin-ops">
+  <div class="ops-header">
+    <div>
+      <div class="eyebrow">IX-Tips · System operations</div>
+      <h1>Admin overview</h1>
+      <div class="muted">Monitor league coverage, prediction output and scheduled processing.</div>
     </div>
+    <div class="muted">Reporting date · {{ today|date:"D, d M Y" }}</div>
   </div>
 
-  <div class="table-data admin-table-grid">
+  <div class="ops-grid">
+    <div class="metric"><div class="metric-label">Competitions monitored</div><div class="metric-value">{{ totals.competitions }}</div><div class="muted">Configured leagues</div></div>
+    <div class="metric"><div class="metric-label">Training records cached</div><div class="metric-value">{{ totals.training_entries }}</div><div class="muted">Historical model input</div></div>
+    <div class="metric"><div class="metric-label">Predictions saved</div><div class="metric-value">{{ totals.predictions }}</div><div class="muted">{{ totals.competitions_with_predictions }} leagues with output</div></div>
+    <div class="metric"><div class="metric-label">Upcoming predictions</div><div class="metric-value">{{ totals.upcoming_predictions }}</div><div class="muted">{{ totals.competitions_without_upcoming }} leagues need fixture review</div></div>
+  </div>
 
-    <!-- ── Top Picks Admin ── -->
-    <div class="order table-card mb-4">
-      <div class="admin-card-head">
-        <h3><i class='bx bxs-star' style="color:#f59e0b; margin-right:6px;"></i>Regenerate Top Picks</h3>
-      </div>
-      <form method="POST" action="{% url 'regenerate_top_picks' %}" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+  <section class="panel">
+    <div class="panel-head">
+      <div><h2>Competition coverage</h2><div class="muted">Training cache ≠ fixtures ≠ generated predictions. Check all three stages.</div></div>
+      <span class="muted">{{ competition_rows|length }} competitions</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Competition</th><th>Provider</th><th>Training data</th><th>Saved predictions</th><th>Upcoming</th><th>Latest match</th><th>Coverage</th><th>Action</th></tr></thead>
+        <tbody>
+        {% for row in competition_rows %}
+          <tr>
+            <td><span class="comp-name">{{ row.name }}</span><span class="comp-code">{{ row.code }}</span></td>
+            <td>{{ row.provider }}</td>
+            <td>{% if row.training_cached %}<strong>{{ row.training_entries }}</strong> rows{% else %}<span class="muted">Not cached</span>{% endif %}</td>
+            <td>{{ row.prediction_count }}</td>
+            <td><strong>{{ row.upcoming_count }}</strong></td>
+            <td>{{ row.latest_match_date|date:"d M Y"|default:"—" }}</td>
+            <td>
+              {% if row.coverage_status == "ready" %}<span class="pill ready">Generating</span>
+              {% elif row.coverage_status == "trained" %}<span class="pill trained">No upcoming output</span>
+              {% else %}<span class="pill missing">No training cache</span>{% endif %}
+            </td>
+            <td>
+              <form method="POST" action="{% url 'refresh_cache_now' %}">
+                {% csrf_token %}<input type="hidden" name="competition" value="{{ row.code }}">
+                <button class="btn btn-subtle" type="submit">Refresh data</button>
+              </form>
+            </td>
+          </tr>
+        {% empty %}<tr><td colspan="8" class="empty">No competitions configured.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div><h2>Prediction controls</h2><div class="muted">Run the same scheduled jobs used by the background pipeline.</div></div>
+      <a class="btn btn-primary" href="{% url 'live_predictions' %}">View predictions</a>
+    </div>
+    <div class="actions" style="margin-bottom:18px">
+      <form method="POST" action="{% url 'regenerate_top_picks' %}" class="actions">
         {% csrf_token %}
-        <input type="date" name="match_date" value="{{ today|date:'Y-m-d' }}" min="{{ today|date:'Y-m-d' }}" class="admin-form-input" style="width:100%; max-width:260px;">
-        <select name="variant" class="admin-form-input" style="width:100%; max-width:260px;">
-          <option value="1">Sure 1</option>
-          <option value="2">Sure 2</option>
-          <option value="3">Running Bet</option>
-          <option value="4">Mshipi</option>
-        </select>
-        <button type="submit" class="admin-btn primary">
-          <i class='bx bx-refresh'></i> Regenerate
-        </button>
+        <input class="field" type="date" name="match_date" value="{{ today|date:'Y-m-d' }}" min="{{ today|date:'Y-m-d' }}">
+        <select class="field" name="variant"><option value="1">Sure 1</option><option value="2">Sure 2</option><option value="3">Running Bet</option><option value="4">Mshipi</option></select>
+        <button class="btn btn-primary" type="submit">Regenerate top picks</button>
       </form>
     </div>
-
-    <!-- ── Scheduled Tasks ── -->
-    <div class="order table-card mb-4">
-      <div class="admin-card-head">
-        <h3><i class='bx bx-time-five' style="color:#3C91E6; margin-right:6px;"></i>Scheduled Tasks</h3>
-        <span style="font-size:0.72rem; color:var(--text-secondary);">{{ tasks|length }} task{{ tasks|length|pluralize }}</span>
-      </div>
-      <div class="table-scroll">
-        <table class="dashboard-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Task</th>
-              <th>Status</th>
-              <th>Schedule</th>
-              <th>Last Run</th>
-              <th>Last Triggered</th>
-              <th>Run Now</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for task in tasks %}
-            <tr>
-              <td class="cell-strong">{{ task.name }}</td>
-              <td class="cell-code">
-                <span class="task-label">{{ task.task_label }}</span>
-                <span class="task-path">{{ task.task }}</span>
-              </td>
-              <td>
-                {% if task.enabled %}
-                <span class="status-badge enabled">Enabled</span>
-                {% else %}
-                <span class="status-badge disabled">Disabled</span>
-                {% endif %}
-              </td>
-              <td>{% if task.interval %}Interval{% elif task.crontab %}Crontab{% else %}—{% endif %}</td>
-              <td style="font-size:0.78rem; color:var(--text-secondary);">{{ task.last_run_at|default:"Never" }}</td>
-              <td style="font-size:0.78rem; color:var(--text-secondary);">{{ task.last_triggered|default:"Never" }}</td>
-              <td class="cell-actions">
-                <form method="POST" action="{% url 'trigger_task_now' %}" class="inline-form">
-                  {% csrf_token %}
-                  <input type="hidden" name="task_path" value="{{ task.task }}">
-                  <button type="submit" class="admin-btn primary"><i class='bx bx-play'></i> Run</button>
-                </form>
-              </td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="7" style="text-align:center; color:var(--text-secondary); padding:24px;">No scheduled tasks found.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Scheduled job</th><th>State</th><th>Schedule</th><th>Last run</th><th>Last changed</th><th>Control</th></tr></thead>
+        <tbody>
+        {% for task in tasks %}
+          <tr>
+            <td><span class="task-name">{{ task.name }}</span><span class="task-path">{{ task.task_label }} · {{ task.task }}</span></td>
+            <td>{% if task.enabled %}<span class="pill enabled">Enabled</span>{% else %}<span class="pill disabled">Disabled</span>{% endif %}</td>
+            <td>{% if task.interval %}Every {{ task.interval }}{% elif task.crontab %}{{ task.crontab }}{% else %}Manual{% endif %}</td>
+            <td>{{ task.last_run_at|date:"d M Y H:i"|default:"Never" }}</td>
+            <td>{{ task.last_triggered|date:"d M Y H:i"|default:"—" }}</td>
+            <td><form method="POST" action="{% url 'trigger_task_now' %}">{% csrf_token %}<input type="hidden" name="task_path" value="{{ task.task }}"><button class="btn btn-subtle" type="submit">Run now</button></form></td>
+          </tr>
+        {% empty %}<tr><td colspan="6" class="empty">No periodic tasks are configured.</td></tr>{% endfor %}
+        </tbody>
+      </table>
     </div>
+  </section>
 
-    <!-- ── Cached Training Data ── -->
-    <div class="order table-card">
-      <div class="admin-card-head">
-        <h3><i class='bx bx-data' style="color:#10b981; margin-right:6px;"></i>Cached Training Data</h3>
-        <span style="font-size:0.72rem; color:var(--text-secondary);">{{ cache_info|length }} competition{{ cache_info|length|pluralize }}</span>
-      </div>
-      <div class="table-scroll">
-        <table class="dashboard-table">
-          <thead>
-            <tr>
-              <th>Competition</th>
-              <th>Cached</th>
-              <th>Entries</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for cache in cache_info %}
-            <tr>
-              <td class="cell-strong">{{ cache.competition }}</td>
-              <td>
-                {% if cache.cached %}
-                <span class="status-badge cached">Yes</span>
-                {% else %}
-                <span class="status-badge missing">No</span>
-                {% endif %}
-              </td>
-              <td>{{ cache.entries }}</td>
-              <td class="cell-actions" style="display:flex; gap:6px; flex-wrap:wrap;">
-                <form method="POST" action="{% url 'refresh_cache_now' %}" class="inline-form">
-                  {% csrf_token %}
-                  <input type="hidden" name="competition" value="{{ cache.competition }}">
-                  <button type="submit" class="admin-btn success"><i class='bx bx-refresh'></i> Refresh</button>
-                </form>
-                <form method="POST" action="{% url 'clear_cache_now' %}" class="inline-form">
-                  {% csrf_token %}
-                  <input type="hidden" name="competition" value="{{ cache.competition }}">
-                  <button type="submit" class="admin-btn danger"><i class='bx bx-trash'></i> Clear</button>
-                </form>
-              </td>
-            </tr>
-            {% empty %}
-            <tr><td colspan="4" style="text-align:center; color:var(--text-secondary); padding:24px;">No cache data found.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+  <section class="panel">
+    <div class="panel-head"><div><h2>Latest prediction records</h2><div class="muted">A quick confirmation of what the application has persisted.</div></div><span class="muted">Most recent 8</span></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Match date</th><th>Competition</th><th>Fixture</th><th>Model score</th><th>Result</th><th>Status</th></tr></thead>
+      <tbody>{% for match in recent_predictions %}
+        <tr><td>{{ match.match_date|date:"d M Y" }}</td><td>{{ match.competition }}</td><td><strong>{{ match.home_team }}</strong> vs {{ match.away_team }}</td><td>{{ match.predicted_home_goals|default:"—" }} – {{ match.predicted_away_goals|default:"—" }}</td><td>{{ match.predicted_result|default:"—" }}</td><td>{{ match.status }}</td></tr>
+      {% empty %}<tr><td colspan="6" class="empty">No prediction records have been saved yet.</td></tr>{% endfor %}</tbody></table>
     </div>
-
-  </div>
+  </section>
 </div>
 {% endblock %}
