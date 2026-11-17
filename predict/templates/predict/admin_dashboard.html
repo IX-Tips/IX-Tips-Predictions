@@ -34,6 +34,13 @@
 .admin-ops .field{border:1px solid rgba(148,163,184,.4);border-radius:9px;padding:9px 11px;background:transparent;color:inherit;min-height:38px}
 .admin-ops .task-name{font-weight:750}.admin-ops .task-path{display:block;font-size:.7rem;color:var(--text-secondary,#64748b);margin-top:3px}
 .admin-ops .empty{padding:22px;text-align:center;color:var(--text-secondary,#64748b)}
+.admin-ops .diag-status{display:inline-flex;padding:4px 8px;border-radius:999px;font-size:.68rem;font-weight:800;white-space:nowrap}
+.admin-ops .diag-status.fixtures_found{background:#dcfce7;color:#166534}
+.admin-ops .diag-status.empty_response{background:#fef3c7;color:#92400e}
+.admin-ops .diag-status.error,.admin-ops .diag-status.not_configured{background:#fee2e2;color:#991b1b}
+.admin-ops .diag-status.never_checked{background:#e2e8f0;color:#475569}
+.admin-ops .diag-error{max-width:360px;white-space:normal;overflow-wrap:anywhere;color:#b91c1c;font-size:.72rem}
+
 @media(max-width:1000px){.admin-ops .ops-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.admin-ops .ops-grid{grid-template-columns:1fr 1fr}.admin-ops .metric{padding:14px}.admin-ops .metric-value{font-size:1.45rem}.admin-ops .panel{padding:14px}}
 </style>
@@ -88,6 +95,36 @@
         </tbody>
       </table>
     </div>
+  </section>
+
+
+  <section class="panel">
+    <div class="panel-head">
+      <div><h2>Provider diagnostics</h2><div class="muted">Latest fixture-provider attempt per league. Diagnostics update automatically when the prediction pipeline checks fixtures; opening this page does not spend API requests.</div></div>
+      <span class="muted">Credentials are never displayed</span>
+    </div>
+    <div class="table-wrap">
+      <table style="min-width:1050px">
+        <thead><tr><th>League</th><th>Provider</th><th>Configuration</th><th>Last result</th><th>Fixtures</th><th>Last checked</th><th>Last success</th><th>Details / error</th></tr></thead>
+        <tbody>
+        {% for row in competition_rows %}
+          {% for diag in row.provider_diagnostics %}
+          <tr>
+            {% if forloop.first %}<td rowspan="{{ row.provider_diagnostics|length }}"><strong>{{ row.name }}</strong><span class="comp-code">{{ row.code }}</span></td>{% endif %}
+            <td><strong>{{ diag.provider }}</strong></td>
+            <td>{% if diag.configured %}<span class="pill enabled">Configured</span>{% else %}<span class="pill missing">Not configured</span><div class="muted">{{ diag.credential_name }}</div>{% endif %}</td>
+            <td><span class="diag-status {{ diag.status }}">{{ diag.status|default:"never_checked"|title|cut:"_" }}</span></td>
+            <td>{{ diag.fixture_count|default:0 }}</td>
+            <td>{{ diag.last_checked|default:"Never"|date:"d M Y H:i" }}</td>
+            <td>{{ diag.last_success|default:"—"|date:"d M Y H:i" }}</td>
+            <td>{% if diag.last_error %}<div class="diag-error">{{ diag.last_error }}</div>{% elif diag.last_match_date %}<span class="muted">Checked {{ diag.last_match_date }}</span>{% elif not diag.configured %}<span class="muted">Set the required environment variable on the server.</span>{% else %}<span class="muted">No attempt recorded yet.</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        {% empty %}<tr><td colspan="8" class="empty">No provider diagnostics available.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="muted" style="margin-top:12px">For LF, the dashboard only reports whether LIVEFOOTBALL_KEY is present; it never reveals the key. An empty response means the request completed but no usable fixtures were returned.</div>
   </section>
 
   <section class="panel">
