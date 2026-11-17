@@ -672,7 +672,7 @@ def _uk_main_season(fduk_code, season_year):
 
 def _uk_fixtures(fduk_code):
     """Upcoming fixtures for a league from the shared fixtures.csv (cached)."""
-    ck = "uk_fixtures_all"
+    ck = "uk_fixtures_all_v2"
     allrows = cache.get(ck)
     if allrows is None:
         allrows = _uk_get_csv(f"{UK_BASE}/fixtures.csv")
@@ -693,7 +693,7 @@ def _uk_current_matches(competition_code):
     if not mapping:
         return []
     kind, fduk_code = mapping
-    ck = f"uk_current::{competition_code}"
+    ck = f"uk_current_v2::{competition_code}"
     cached = cache.get(ck)
     if cached is not None:
         return cached
@@ -806,7 +806,7 @@ def _om_get_csv(competition_code, kind, season_code):
         return []
     if kind not in {"results", "fixtures"}:
         return []
-    cache_key = f"om_csv::{competition_code}::{kind}::{season_code}"
+    cache_key = f"om_csv_v2::{competition_code}::{kind}::{season_code}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -885,7 +885,7 @@ def _om_current_matches(competition_code):
     if not season_code:
         return []
 
-    cache_key = f"om_current_matches::{competition_code}::{season_code}"
+    cache_key = f"om_current_matches_v2::{competition_code}::{season_code}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
