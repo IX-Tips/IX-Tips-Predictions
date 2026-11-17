@@ -172,11 +172,26 @@ def fetch_fixture_matches_by_date(api_key, competition_code, match_date):
             continue
 
         valid_count = sum(1 for match in (matches or []) if _fixture_key(match) is not None)
-        record_provider_diagnostic(
-            competition_code, provider,
-            "fixtures_found" if valid_count else "empty_response",
-            fixture_count=valid_count, match_date=match_date,
-        )
+        request_health = cache.get("provider_request_health::LF", {}) if provider == "LF" else {}
+        recent_lf_error = False
+        if request_health.get("status") == "error" and request_health.get("checked_at"):
+            try:
+                checked_at = timezone.datetime.fromisoformat(request_health["checked_at"])
+                recent_lf_error = (timezone.now() - checked_at).total_seconds() < 90
+            except (TypeError, ValueError):
+                recent_lf_error = False
+        if not valid_count and recent_lf_error:
+            record_provider_diagnostic(
+                competition_code, provider, "error",
+                error=request_health.get("last_error") or "Live-Football-Data request failed",
+                match_date=match_date,
+            )
+        else:
+            record_provider_diagnostic(
+                competition_code, provider,
+                "fixtures_found" if valid_count else "empty_response",
+                fixture_count=valid_count, match_date=match_date,
+            )
 
         for match in matches or []:
             key = _fixture_key(match)
