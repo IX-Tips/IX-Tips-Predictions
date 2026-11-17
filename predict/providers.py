@@ -17,6 +17,7 @@ import os
 
 import requests
 from django.core.cache import cache
+from django.utils import timezone
 
 from .constants import (
     API_TOKEN,
@@ -352,6 +353,11 @@ def _lf_get(path):
     """Call Live-Football-Data and return the `response` dict (or {})."""
     if not LF_KEY:
         logger.info("LIVEFOOTBALL_KEY not set; skipping call %s", path)
+        cache.set("provider_request_health::LF", {
+            "status": "not_configured",
+            "last_error": "LIVEFOOTBALL_KEY is not set",
+            "checked_at": timezone.now().isoformat(),
+        }, timeout=60 * 60 * 24)
         return {}
     headers = {"x-rapidapi-host": LF_HOST, "x-rapidapi-key": LF_KEY}
     try:
@@ -360,9 +366,26 @@ def _lf_get(path):
         data = r.json()
     except Exception as exc:
         logger.warning("Live-Football-Data request failed: %s error=%s", path, exc)
+        cache.set("provider_request_health::LF", {
+            "status": "error",
+            "last_error": str(exc)[:500],
+            "checked_at": timezone.now().isoformat(),
+        }, timeout=60 * 60 * 24)
         return {}
     if data.get("status") not in (None, "success"):
-        logger.warning("Live-Football-Data non-success for %s: %s", path, data.get("status"))
+        message = str(data.get("message") or data.get("status"))
+        logger.warning("Live-Football-Data non-success for %s: %s", path, message)
+        cache.set("provider_request_health::LF", {
+            "status": "error",
+            "last_error": message[:500],
+            "checked_at": timezone.now().isoformat(),
+        }, timeout=60 * 60 * 24)
+    else:
+        cache.set("provider_request_health::LF", {
+            "status": "ok",
+            "last_error": None,
+            "checked_at": timezone.now().isoformat(),
+        }, timeout=60 * 60 * 24)
     return data.get("response", {}) or {}
 
 
