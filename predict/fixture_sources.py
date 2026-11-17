@@ -14,7 +14,13 @@ import logging
 import os
 import re
 
-from .providers import dispatch_provider, get_provider, AF_KEY, supports_open_matchday
+from django.core.cache import cache
+from django.utils import timezone
+
+from .providers import (
+    dispatch_provider, get_provider, AF_KEY, LF_KEY, API_TOKEN,
+    supports_open_matchday, LIVEFOOTBALL_LEAGUE_IDS,
+)
 from .constants import APIFOOTBALL_LEAGUE_IDS
 
 logger = logging.getLogger(__name__)
@@ -26,6 +32,54 @@ try:
 except (TypeError, ValueError, json.JSONDecodeError):
     logger.exception("Invalid FIXTURE_PROVIDER_ORDER JSON; using primary providers")
     FIXTURE_PROVIDER_ORDER = {}
+
+
+
+PROVIDER_DIAGNOSTIC_TTL = 60 * 60 * 24 * 14
+
+
+def provider_diagnostic_key(competition_code, provider):
+    return f"provider_diagnostic::{competition_code}::{provider}"
+
+
+def provider_configuration(provider, competition_code):
+    """Return safe credential/configuration state without exposing secrets."""
+    if provider == "FD":
+        return bool(API_TOKEN), "FOOTBALL_DATA_API_KEY"
+    if provider == "UK":
+        return True, "Public CSV source; no key required"
+    if provider == "LF":
+        return bool(LF_KEY and competition_code in LIVEFOOTBALL_LEAGUE_IDS), "LIVEFOOTBALL_KEY"
+    if provider == "AF":
+        return bool(AF_KEY), "APIFOOTBALL_KEY"
+    if provider == "OM":
+        return supports_open_matchday(competition_code), "OPEN_MATCHDAY_ENABLED"
+    return False, "Unknown provider"
+
+
+def record_provider_diagnostic(competition_code, provider, status, fixture_count=0, error=None, match_date=None):
+    """Persist the latest fixture-provider attempt for the staff diagnostics page."""
+    key = provider_diagnostic_key(competition_code, provider)
+    previous = cache.get(key, {}) or {}
+    now = timezone.now().isoformat()
+    state = {
+        "competition": competition_code,
+        "provider": provider,
+        "status": status,
+        "fixture_count": int(fixture_count or 0),
+        "last_checked": now,
+        "last_match_date": str(match_date) if match_date else None,
+        "last_error": (str(error)[:500] if error else None),
+        "last_success": previous.get("last_success"),
+    }
+    if status == "fixtures_found" and fixture_count:
+        state["last_success"] = now
+    cache.set(key, state, timeout=PROVIDER_DIAGNOSTIC_TTL)
+    return state
+
+
+def get_provider_diagnostic(competition_code, provider):
+    return cache.get(provider_diagnostic_key(competition_code, provider))
 
 
 def _provider_order(competition_code):
@@ -94,14 +148,35 @@ def fetch_fixture_matches_by_date(api_key, competition_code, match_date):
     """
     merged = {}
     for provider in _provider_order(competition_code):
+        configured, credential_name = provider_configuration(provider, competition_code)
+        if not configured:
+            reason = f"{credential_name} is missing, disabled, or not mapped"
+            record_provider_diagnostic(
+                competition_code, provider, "not_configured",
+                error=reason, match_date=match_date,
+            )
+            logger.warning("Fixture provider %s not configured for %s: %s", provider, competition_code, reason)
+            continue
+
         try:
             matches = _dispatch_explicit_provider(provider, competition_code, match_date)
-        except Exception:
+        except Exception as exc:
+            record_provider_diagnostic(
+                competition_code, provider, "error",
+                error=exc, match_date=match_date,
+            )
             logger.exception(
                 "Fixture provider %s failed for %s on %s",
                 provider, competition_code, match_date,
             )
             continue
+
+        valid_count = sum(1 for match in (matches or []) if _fixture_key(match) is not None)
+        record_provider_diagnostic(
+            competition_code, provider,
+            "fixtures_found" if valid_count else "empty_response",
+            fixture_count=valid_count, match_date=match_date,
+        )
 
         for match in matches or []:
             key = _fixture_key(match)
