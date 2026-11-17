@@ -570,6 +570,12 @@ def fetch_training_data(competition_code, seasons=None):
     for season in seasons:
         try:
             matches = fetch_matches_by_season(API_TOKEN, competition_code, season)
+            if not matches:
+                # Fallback to open-matchday for its current published season.
+                # It is intentionally not used to fabricate older historical rows.
+                from .providers import om_fetch_matches_by_season, supports_open_matchday
+                if supports_open_matchday(competition_code):
+                    matches = om_fetch_matches_by_season(competition_code, season)
             if matches == []:
                 logger.info(
                     "No season data returned for %s season=%s. This may indicate an auth issue, API limit, or no coverage.",
