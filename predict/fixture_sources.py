@@ -157,6 +157,73 @@ def _dispatch_explicit_provider(provider, competition_code, match_date):
     return handler(competition_code, match_date)
 
 
+def fetch_upcoming_fixture_groups(api_key, competition_code, days_ahead=45):
+    """
+    Discover upcoming fixtures in bulk where a season feed is available.
+
+    open-matchday publishes one season CSV, so scanning 45 separate dates
+    wastes time and obscures feed failures. Read its season feed once, derive
+    the dates that actually contain fixtures, then merge those dates through
+    the normal provider chain. Other competitions retain the date-query
+    fallback.
+    """
+    from datetime import date, timedelta
+    from . import providers
+
+    today = date.today()
+    last_day = today + timedelta(days=max(1, int(days_ahead)))
+
+    if supports_open_matchday(competition_code):
+        try:
+            season_matches = providers._om_current_matches(competition_code)
+            candidate_dates = sorted({
+                (match.get("utcDate") or "")[:10]
+                for match in season_matches
+                if match.get("status") != "FINISHED"
+                and (match.get("utcDate") or "")[:10]
+                and today.isoformat() <= (match.get("utcDate") or "")[:10] <= last_day.isoformat()
+                and _fixture_key(match) is not None
+            })
+            record_provider_diagnostic(
+                competition_code, "OM",
+                "fixtures_found" if candidate_dates else "empty_response",
+                fixture_count=sum(
+                    1 for match in season_matches
+                    if match.get("status") != "FINISHED"
+                    and (match.get("utcDate") or "")[:10] in candidate_dates
+                    and _fixture_key(match) is not None
+                ),
+                match_date=f"{today.isoformat()}..{last_day.isoformat()}",
+            )
+            grouped = {}
+            for match_day in candidate_dates:
+                merged = fetch_fixture_matches_by_date(api_key, competition_code, match_day)
+                if merged:
+                    grouped[match_day] = merged
+            if grouped:
+                return grouped
+        except Exception as exc:
+            record_provider_diagnostic(
+                competition_code, "OM", "error",
+                error=exc, match_date=f"{today.isoformat()}..{last_day.isoformat()}",
+            )
+            logger.exception("Bulk fixture discovery failed for %s", competition_code)
+
+    # Fallback for leagues without a season CSV, or when the bulk source has
+    # no published upcoming fixtures.
+    from .utils import find_upcoming_match_dates
+    dates = find_upcoming_match_dates(
+        fetch_fixture_matches_by_date, api_key, competition_code,
+        start_date=today, days_ahead=max(1, int(days_ahead)),
+    )
+    grouped = {}
+    for match_day in dates:
+        matches = fetch_fixture_matches_by_date(api_key, competition_code, match_day)
+        if matches:
+            grouped[match_day] = matches
+    return grouped
+
+
 def fetch_fixture_matches_by_date(api_key, competition_code, match_date):
     """
     Fetch fixtures from the configured provider chain and merge duplicates.
