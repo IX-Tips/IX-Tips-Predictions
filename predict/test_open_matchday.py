@@ -1,6 +1,7 @@
 from unittest import TestCase
 from unittest.mock import patch
 
+from predict.fixture_sources import _provider_order
 from predict.providers import (
     _om_row_to_match,
     om_fetch_matches_by_date,
@@ -56,6 +57,13 @@ class OpenMatchdayProviderTests(TestCase):
             self.assertTrue(supports_open_matchday("BEL"))
             self.assertTrue(supports_open_matchday("JPN"))
             self.assertFalse(supports_open_matchday("SAU"))
+
+    def test_open_matchday_is_appended_after_the_primary_fixture_provider(self):
+        with patch("predict.fixture_sources.FIXTURE_PROVIDER_ORDER", {}), \
+             patch("predict.fixture_sources.get_provider", return_value="UK"), \
+             patch("predict.fixture_sources.supports_open_matchday", return_value=True), \
+             patch("predict.fixture_sources.AF_KEY", ""):
+            self.assertEqual(_provider_order("BEL"), ["UK", "OM"])
 
     def test_date_fetch_filters_the_current_feed_by_match_day(self):
         matches = [
