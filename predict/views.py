@@ -1572,7 +1572,10 @@ def admin_task_dashboard(request):
             "prediction_count": prediction_count,
             "upcoming_count": upcoming_count,
             "latest_match_date": latest_match_date,
-            "coverage_status": coverage_status,\n            "fixture_status": fixture_status,\n            "provider_fixture_count": primary_diagnostic.get("fixture_count", 0),\n            "provider_error": primary_diagnostic.get("last_error"),
+            "coverage_status": coverage_status,
+            "fixture_status": fixture_status,
+            "provider_fixture_count": primary_diagnostic.get("fixture_count", 0),
+            "provider_error": primary_diagnostic.get("last_error"),
         })
 
     recent_predictions = MatchPrediction.objects.order_by("-match_date")[:8]
