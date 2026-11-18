@@ -208,4 +208,4 @@ def get_team_metadata(name, competition_code=None):
         flag = country_flag_url(fallback_competition)
         if flag:
             meta = {**meta, "crest": flag}
-    return metaa
+    return meta
