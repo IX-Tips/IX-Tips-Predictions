@@ -59,7 +59,7 @@ class SlipBatch(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{this.get_variant_display()} #{this.pk} ({this.status})"
+        return f"{self.get_variant_display()} #{self.pk} ({self.status})"
 
 
 class TopPick(models.Model):
