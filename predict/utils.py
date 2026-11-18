@@ -62,9 +62,8 @@ def scoreline_predictions(predicted_home_goals, predicted_away_goals, max_goals=
         if home_goals == away_goals:
             # Very slight draw boost
             return 1.0 + (0.04 * closeness)
-        if home_goals + away_goals >= 6:
-            # Slight suppression of extreme scorelines
-            return 0.92
+        # Let the fitted goal rates determine high-scoring outcomes. The
+        # independent Poisson probabilities already penalize extreme totals.
         return 1.0
 
     candidates = []
@@ -2425,8 +2424,12 @@ def get_mshipi_predictions(limit=20):
         selected_fixture_keys.add(fixture_key)
         market_counts[market] += 1
 
+    if len(selected) < 20:
+        logger.info("Mshipi not generated: %s/20 selections available", len(selected))
+        return {}
+
     grouped = defaultdict(list)
-    for candidate in sorted(selected[:limit], key=lambda item: item["confidence_value"], reverse=True):
+    for candidate in sorted(selected[:20], key=lambda item: item["confidence_value"], reverse=True):
         grouped[candidate["match_date"]].append({
             "home_team": candidate["home_team"],
             "away_team": candidate["away_team"],
