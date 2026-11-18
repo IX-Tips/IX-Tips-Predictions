@@ -2506,6 +2506,9 @@ def store_top_pick_for_date(predictions_by_date, variant="1"):
     batch = None
     with transaction.atomic():
         if variant in {"3", "4"} and SlipBatch is not None:
+            if connection.vendor == "postgresql":
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_advisory_xact_lock(%s)", [900000 + int(variant)])
             batch = SlipBatch.objects.select_for_update().filter(
                 variant=variant, status="ACTIVE"
             ).order_by("-created_at").first()
@@ -2516,6 +2519,8 @@ def store_top_pick_for_date(predictions_by_date, variant="1"):
                 for pick in (day_picks or [])
                 if pick.get("home_team") and pick.get("away_team") and pick.get("tip")
             )
+            if valid_total == 0:
+                return 0
             if variant == "4" and valid_total < 20:
                 logger.info("Mshipi requires 20 legs; only %s were available", valid_total)
                 return 0
