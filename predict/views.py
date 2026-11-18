@@ -793,8 +793,8 @@ def top_picks_view(request):
         )
         metadata_home_name = matched_prediction.home_team if matched_prediction else raw_home_team
         metadata_away_name = matched_prediction.away_team if matched_prediction else raw_away_team
-        meta_home = get_team_metadata(metadata_home_name)
-        meta_away = get_team_metadata(metadata_away_name)
+        meta_home = get_team_metadata(metadata_home_name, competition_code)
+        meta_away = get_team_metadata(metadata_away_name, competition_code)
         home_name = normalize_display_team_name(
             meta_home.get("shortName"),
             fallback=raw_home_team,
@@ -839,7 +839,7 @@ def top_picks_view(request):
         enriched_pick["competition"] = competition_name
         enriched_pick["competition_code"] = competition_code
         enriched_pick["competition_logo"] = (
-            static(f"logos/{competition_code}.png") if competition_code in competitions else None
+            static(f"logos/{competition_code}.png") if os.path.exists(os.path.join(settings.BASE_DIR, "static", "logos", f"{competition_code}.png")) else country_flag_url(competition_code)
         )
         enriched_pick["odds"] = odds_value
         enriched_pick["implied_probability"] = None
@@ -1219,8 +1219,8 @@ def build_market_pick_rows(group_key=None, market_name=None, scope_key=None, sor
                 actual_tip = result_tip
             is_correct = None if actual_tip == "Refund" else (selected_market == actual_tip)
 
-        meta_home = get_team_metadata(prediction.home_team)
-        meta_away = get_team_metadata(prediction.away_team)
+        meta_home = get_team_metadata(prediction.home_team, prediction.competition)
+        meta_away = get_team_metadata(prediction.away_team, prediction.competition)
         rows.append({
             "match_date": prediction.match_date,
             "match_time": get_cached_kickoff_time(prediction.competition, prediction.match_date, prediction.home_team, prediction.away_team),
@@ -1228,7 +1228,7 @@ def build_market_pick_rows(group_key=None, market_name=None, scope_key=None, sor
                 competitions.get(prediction.competition, prediction.competition),
                 code=prediction.competition,
             ),
-            "competition_logo": static(f"logos/{prediction.competition}.png") if prediction.competition in competitions else None,
+            "competition_logo": static(f"logos/{prediction.competition}.png") if os.path.exists(os.path.join(settings.BASE_DIR, "static", "logos", f"{prediction.competition}.png")) else country_flag_url(prediction.competition),
             "home_team": normalize_display_team_name(meta_home.get("shortName"), fallback=prediction.home_team, max_length=24),
             "away_team": normalize_display_team_name(meta_away.get("shortName"), fallback=prediction.away_team, max_length=24),
             "home_logo": meta_home.get("crest"),
@@ -2718,8 +2718,8 @@ def predictions_view(request):
 
     display_data = []
     for p in predictions:
-        meta_home = get_team_metadata(p.home_team)
-        meta_away = get_team_metadata(p.away_team)
+        meta_home = get_team_metadata(p.home_team, p.competition)
+        meta_away = get_team_metadata(p.away_team, p.competition)
         home_display_name = normalize_display_team_name(
             meta_home.get("shortName"),
             fallback=p.home_team,
@@ -2730,7 +2730,7 @@ def predictions_view(request):
         )
 
         comp_code = p.competition if p.competition in competitions else NAME_TO_CODE.get(p.competition.lower().strip(), "default")
-        competition_logo_path = static(f"logos/{comp_code}.png")
+        competition_logo_path = static(f"logos/{comp_code}.png") if os.path.exists(os.path.join(settings.BASE_DIR, "static", "logos", f"{comp_code}.png")) else country_flag_url(comp_code)
 
         actual_result = "-:-"
         actual_winner = None
@@ -3093,7 +3093,7 @@ def ajax_league_table(request):
     for row in table:
         team = row.get("team", {})
         name = team.get("name", "")
-        meta = get_team_metadata(name)
+        meta = get_team_metadata(name, comp)
         team["shortName"] = meta.get("shortName") or team.get("shortName") or name
         team["crest"] = meta.get("crest") or team.get("crest") or static("logos/default.png")
     html = render_to_string("partials/league_table.html", {"league_table": table})
