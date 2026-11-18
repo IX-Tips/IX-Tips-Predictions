@@ -2183,6 +2183,7 @@ def build_won_slip_groups(selected_variant=None):
         "2": "Sure 2",
         "3": "Running Bet",
         "4": "Mshipi",
+        "5": "12",
     }
     slips = defaultdict(list)
     qs = TopPick.objects.all().order_by("-match_date", "variant", "home_team")
