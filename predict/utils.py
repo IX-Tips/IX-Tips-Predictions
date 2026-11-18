@@ -34,6 +34,8 @@ HEADERS = {"X-Auth-Token": API_TOKEN}
 ODDS_PROVIDER = os.getenv("ODDS_PROVIDER", "the-odds-api")
 logger = logging.getLogger(__name__)
 
+_EXCLUDED_TOP_PICK_MARKETS = {"Under 2.5", "NG"}
+
 
 def scoreline_predictions(predicted_home_goals, predicted_away_goals, max_goals=None, top_n=5):
     home_rate = max(float(predicted_home_goals or 0), 0.15)
@@ -2210,6 +2212,11 @@ def _collect_top_pick_candidates(rank_limit=4):
             continue  # no model for this competition — skip, don't generate low-quality picks
         model_context = bundle[2] if isinstance(bundle[2], dict) else {}
         ranked_markets, _ = score_top_pick_markets(m, model_context)
+        ranked_markets = [
+            (market, confidence)
+            for market, confidence in ranked_markets
+            if market not in _EXCLUDED_TOP_PICK_MARKETS
+        ]
         if not ranked_markets:
             continue
 
@@ -2242,9 +2249,7 @@ def get_top_predictions(limit=10, variant=1):
         "2": 3,
         "X": 2,
         "Over 2.5": 3,
-        "Under 2.5": 2,
         "GG": 2,
-        "NG": 2,
         "Any Team Over 1.5": 2,
         "Home Win Either Half": 2,
         "Away Win Either Half": 2,
@@ -2348,9 +2353,7 @@ def get_mshipi_predictions(limit=20):
         "2",
         "X",
         "GG",
-        "NG",
         "Over 2.5",
-        "Under 2.5",
         "Any Team Over 1.5",
         "Home Win Either Half",
         "Away Win Either Half",
@@ -2362,9 +2365,7 @@ def get_mshipi_predictions(limit=20):
         "2": 3,
         "X": 2,
         "GG": 2,
-        "NG": 2,
         "Over 2.5": 3,
-        "Under 2.5": 3,
         "Any Team Over 1.5": 3,
         "Home Win Either Half": 2,
         "Away Win Either Half": 2,
