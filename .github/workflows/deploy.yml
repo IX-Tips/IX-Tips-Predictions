@@ -151,7 +151,21 @@ jobs:
           }
           trap rollback EXIT
 
+          # Keep the currently deployed images (tagged as rollback above), but
+          # remove disposable build cache and dangling images before loading.
+          # This is important on the small Oracle VM; named volumes are untouched.
+          echo "Disk usage before Docker cleanup:"
+          df -h "$PROJECT_DIR"
+          docker system df
+          docker builder prune --all --force
+          docker image prune --force
+          echo "Disk usage after Docker cleanup:"
+          df -h "$PROJECT_DIR"
+          docker system df
+
           docker load --input "$IMAGE_ARCHIVE"
+          # Docker now owns the image layers; remove the duplicate tar archive.
+          rm -f "$IMAGE_ARCHIVE"
 
           # Apply schema changes before replacing the currently serving app.
           "${COMPOSE[@]}" run --rm --no-deps app python manage.py migrate --noinput
