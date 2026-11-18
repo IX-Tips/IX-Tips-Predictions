@@ -927,7 +927,7 @@ def top_picks_view(request):
 @require_GET
 def won_slips_view(request):
     selected_variant = request.GET.get("variant")
-    selected_variant = selected_variant if selected_variant in {"1", "2", "3", "4"} else ""
+    selected_variant = selected_variant if selected_variant in {"1", "2", "3", "4", "5"} else ""
     won_slips = build_won_slip_groups(selected_variant or None)
     selected_code = request.GET.get("competition", "PL")
     league_table = get_league_table(selected_code)
@@ -941,6 +941,7 @@ def won_slips_view(request):
             ("2", "Sure 2"),
             ("3", "Running Bet"),
             ("4", "Mshipi"),
+            ("5", "12"),
         ],
         "league_table": league_table,
         "competitions": competitions,
@@ -2145,6 +2146,7 @@ def build_top_pick_slip_summary():
         "2": "Sure 2",
         "3": "Running Bet",
         "4": "Mshipi",
+        "5": "12",
     }
     grouped_rows = defaultdict(list)
     for row in TopPick.objects.values("variant", "match_date", "actual_tip", "is_correct"):
