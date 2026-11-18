@@ -696,7 +696,7 @@ def top_picks_view(request):
     source = "cached"
     prediction_count_for_date = 0
     if not show_past and match_date:
-        if variant in {"3", "4"}:
+        if variant in {"3", "4", "5"}:
             prediction_count_for_date = MatchPrediction.objects.filter(match_date__gte=today).count()
         else:
             prediction_count_for_date = MatchPrediction.objects.filter(match_date=match_date).count()
@@ -705,7 +705,7 @@ def top_picks_view(request):
         and prediction_count_for_date > 0
         and not pick_keys
         and (
-            (variant in {"3", "4"} and True)
+            (variant in {"3", "4", "5"} and True)
             or match_date >= today
         )
     )
