@@ -2439,12 +2439,47 @@ def get_mshipi_predictions(limit=20):
     return dict(grouped)
 
 
+def get_12_predictions(limit=10):
+    """Build ten unique straight-result picks; draw selections are excluded."""
+    candidates_by_date = _collect_top_pick_candidates(rank_limit=6)
+    candidates = []
+    for date_str, day_candidates in candidates_by_date.items():
+        for candidate in day_candidates:
+            if candidate.get("tip") not in {"1", "2"}:
+                continue
+            confidence = float(candidate.get("confidence_value") or candidate.get("confidence") or 0)
+            candidates.append({**candidate, "match_date": date_str, "confidence_value": confidence})
+    candidates.sort(key=lambda item: (item["confidence_value"], item["match_date"]), reverse=True)
+    selected, seen = [], set()
+    for candidate in candidates:
+        key = (candidate["match_date"], candidate["home_team"], candidate["away_team"])
+        if key in seen:
+            continue
+        selected.append(candidate)
+        seen.add(key)
+        if len(selected) == 10:
+            break
+    if len(selected) < 10:
+        logger.info("12 picks not generated: only %s/10 unique win selections available", len(selected))
+        return {}
+    grouped = defaultdict(list)
+    for item in selected:
+        grouped[item["match_date"]].append({
+            "home_team": item["home_team"], "away_team": item["away_team"],
+            "tip": item["tip"], "confidence": f"{item['confidence_value']:.0f}",
+            "match_date": item["match_date"], "odds": item.get("odds"),
+        })
+    return dict(grouped)
+
+
 def get_top_predictions_for_variant(limit=10, variant="1"):
     variant = str(variant)
     if variant == "3":
         return get_running_bet_predictions(limit=limit)
     if variant == "4":
         return get_mshipi_predictions(limit=max(limit, 20))
+    if variant == "5":
+        return get_12_predictions(limit=10)
     return get_top_predictions(limit=limit, variant=int(variant))
 
 
@@ -2463,7 +2498,24 @@ def store_top_pick_for_date(predictions_by_date, variant="1"):
         return 0
 
     processed_count = 0
+    variant = str(variant)
+    batch = None
     with transaction.atomic():
+        if variant in {"3", "4"} and SlipBatch is not None:
+            batch = SlipBatch.objects.select_for_update().filter(
+                variant=variant, status="ACTIVE"
+            ).order_by("-created_at").first()
+            if batch:
+                return batch.picks.count()
+            valid_total = sum(
+                1 for day_picks in (predictions_by_date or {}).values()
+                for pick in (day_picks or [])
+                if pick.get("home_team") and pick.get("away_team") and pick.get("tip")
+            )
+            if variant == "4" and valid_total < 20:
+                logger.info("Mshipi requires 20 legs; only %s were available", valid_total)
+                return 0
+            batch = SlipBatch.objects.create(variant=variant, status="ACTIVE")
         for date_str, picks in (predictions_by_date or {}).items():
             try:
                 match_date = datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -2520,13 +2572,15 @@ def store_top_pick_for_date(predictions_by_date, variant="1"):
                         tip=values["tip"],
                         confidence=values["confidence"],
                         odds=values["odds"],
+                        slip_batch=batch,
                     ))
                     continue
 
-                # Never rewrite a settled result or its original prediction.
+                # Accumulator legs remain immutable for the life of their batch.
+                if variant in {"3", "4"}:
+                    continue
                 if existing.actual_tip is not None or existing.is_correct is not None:
                     continue
-
                 existing.tip = values["tip"]
                 existing.confidence = values["confidence"]
                 existing.odds = values["odds"]
@@ -2534,7 +2588,7 @@ def store_top_pick_for_date(predictions_by_date, variant="1"):
 
             # Remove obsolete unsettled predictions, but retain historical
             # records that already have an outcome.
-            stale_ids = [
+            stale_ids = [] if variant in {"3", "4"} else [
                 row.pk for row in existing_rows
                 if (row.home_team, row.away_team) not in desired_keys
                 and row.actual_tip is None
@@ -2657,6 +2711,17 @@ def update_actuals_for_top_picks(picks_qs):
         pick.is_correct = None if actual_tip == "Refund" else (pick.tip == actual_tip)
         pick.save()
         updated += 1
+        if pick.slip_batch_id:
+            batch = pick.slip_batch
+            legs = list(batch.picks.all())
+            if any(leg.is_correct is False for leg in legs):
+                batch.status = "LOST"
+                batch.closed_at = timezone.now()
+                batch.save(update_fields=["status", "closed_at"])
+            elif legs and all(leg.actual_tip is not None for leg in legs):
+                batch.status = "WON"
+                batch.closed_at = timezone.now()
+                batch.save(update_fields=["status", "closed_at"])
     return updated
 
 
