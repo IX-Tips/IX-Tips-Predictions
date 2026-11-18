@@ -1540,6 +1540,20 @@ def admin_task_dashboard(request):
                 "last_error": diagnostic_state.get("last_error"),
             })
 
+        primary_diagnostic = next(
+            (item for item in diagnostics if item["provider"] == provider),
+            diagnostics[0] if diagnostics else {},
+        )
+        fixture_status = primary_diagnostic.get("status", "never_checked")
+        if upcoming_count:
+            coverage_status = "ready"
+        elif fixture_status == "fixtures_found":
+            coverage_status = "fixtures_no_predictions"
+        elif fixture_status in {"empty_response", "not_configured", "error"}:
+            coverage_status = "no_upcoming_fixtures"
+        else:
+            coverage_status = "trained" if training_entries else "missing"
+
         totals["training_entries"] += training_entries
         totals["predictions"] += prediction_count
         totals["upcoming_predictions"] += upcoming_count
@@ -1558,7 +1572,7 @@ def admin_task_dashboard(request):
             "prediction_count": prediction_count,
             "upcoming_count": upcoming_count,
             "latest_match_date": latest_match_date,
-            "coverage_status": "ready" if upcoming_count else ("trained" if training_entries else "missing"),
+            "coverage_status": coverage_status,\n            "fixture_status": fixture_status,\n            "provider_fixture_count": primary_diagnostic.get("fixture_count", 0),\n            "provider_error": primary_diagnostic.get("last_error"),
         })
 
     recent_predictions = MatchPrediction.objects.order_by("-match_date")[:8]
