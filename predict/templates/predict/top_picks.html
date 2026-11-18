@@ -426,6 +426,11 @@
 {% endif %}
 
 <div class="top-picks-table-container">
+  {% if not prediction and variant == '4' %}
+    <div class="empty-state">Mshipi is published only when 20 valid selections are available. Please check again when more fixtures are covered.</div>
+  {% elif not prediction and variant == '5' %}
+    <div class="empty-state">The 12 slip needs 10 unique home/away win selections. It will appear when enough fixtures are available.</div>
+  {% endif %}
   {% if prediction %}
     <div style="overflow-x:auto;">
       <table class="top-picks-table" style="min-width:100%; text-align:left;">
