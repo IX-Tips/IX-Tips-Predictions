@@ -2576,8 +2576,12 @@ def store_top_pick_for_date(predictions_by_date, variant="1"):
                     ))
                     continue
 
-                # Accumulator legs remain immutable for the life of their batch.
+                # Preserve any legacy unsettled accumulator row as part of the
+                # newly tracked batch; never replace its original selection.
                 if variant in {"3", "4"}:
+                    if existing.slip_batch_id is None:
+                        existing.slip_batch = batch
+                        to_update.append(existing)
                     continue
                 if existing.actual_tip is not None or existing.is_correct is not None:
                     continue
@@ -2602,7 +2606,7 @@ def store_top_pick_for_date(predictions_by_date, variant="1"):
             if to_update:
                 TopPick.objects.bulk_update(
                     to_update,
-                    fields=["tip", "confidence", "odds"],
+                    fields=["tip", "confidence", "odds", "slip_batch"],
                 )
 
             processed_count += len(desired)
