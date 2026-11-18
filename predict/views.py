@@ -793,8 +793,8 @@ def top_picks_view(request):
         )
         metadata_home_name = matched_prediction.home_team if matched_prediction else raw_home_team
         metadata_away_name = matched_prediction.away_team if matched_prediction else raw_away_team
-        meta_home = get_team_metadata(metadata_home_name)
-        meta_away = get_team_metadata(metadata_away_name)
+        meta_home = get_team_metadata(metadata_home_name, competition_code)
+        meta_away = get_team_metadata(metadata_away_name, competition_code)
         home_name = normalize_display_team_name(
             meta_home.get("shortName"),
             fallback=raw_home_team,
@@ -839,7 +839,7 @@ def top_picks_view(request):
         enriched_pick["competition"] = competition_name
         enriched_pick["competition_code"] = competition_code
         enriched_pick["competition_logo"] = (
-            static(f"logos/{competition_code}.png") if competition_code in competitions else None
+            static(f"logos/{competition_code}.png") if os.path.exists(os.path.join(settings.BASE_DIR, "static", "logos", f"{competition_code}.png")) else country_flag_url(competition_code)
         )
         enriched_pick["odds"] = odds_value
         enriched_pick["implied_probability"] = None
@@ -1219,8 +1219,8 @@ def build_market_pick_rows(group_key=None, market_name=None, scope_key=None, sor
                 actual_tip = result_tip
             is_correct = None if actual_tip == "Refund" else (selected_market == actual_tip)
 
-        meta_home = get_team_metadata(prediction.home_team)
-        meta_away = get_team_metadata(prediction.away_team)
+        meta_home = get_team_metadata(prediction.home_team, prediction.competition)
+        meta_away = get_team_metadata(prediction.away_team, prediction.competition)
         rows.append({
             "match_date": prediction.match_date,
             "match_time": get_cached_kickoff_time(prediction.competition, prediction.match_date, prediction.home_team, prediction.away_team),
@@ -1228,7 +1228,7 @@ def build_market_pick_rows(group_key=None, market_name=None, scope_key=None, sor
                 competitions.get(prediction.competition, prediction.competition),
                 code=prediction.competition,
             ),
-            "competition_logo": static(f"logos/{prediction.competition}.png") if prediction.competition in competitions else None,
+            "competition_logo": static(f"logos/{prediction.competition}.png") if os.path.exists(os.path.join(settings.BASE_DIR, "static", "logos", f"{prediction.competition}.png")) else country_flag_url(prediction.competition),
             "home_team": normalize_display_team_name(meta_home.get("shortName"), fallback=prediction.home_team, max_length=24),
             "away_team": normalize_display_team_name(meta_away.get("shortName"), fallback=prediction.away_team, max_length=24),
             "home_logo": meta_home.get("crest"),
@@ -1540,6 +1540,20 @@ def admin_task_dashboard(request):
                 "last_error": diagnostic_state.get("last_error"),
             })
 
+        primary_diagnostic = next(
+            (item for item in diagnostics if item["provider"] == provider),
+            diagnostics[0] if diagnostics else {},
+        )
+        fixture_status = primary_diagnostic.get("status", "never_checked")
+        if upcoming_count:
+            coverage_status = "ready"
+        elif fixture_status == "fixtures_found":
+            coverage_status = "fixtures_no_predictions"
+        elif fixture_status in {"empty_response", "not_configured", "error"}:
+            coverage_status = "no_upcoming_fixtures"
+        else:
+            coverage_status = "trained" if training_entries else "missing"
+
         totals["training_entries"] += training_entries
         totals["predictions"] += prediction_count
         totals["upcoming_predictions"] += upcoming_count
@@ -1558,7 +1572,10 @@ def admin_task_dashboard(request):
             "prediction_count": prediction_count,
             "upcoming_count": upcoming_count,
             "latest_match_date": latest_match_date,
-            "coverage_status": "ready" if upcoming_count else ("trained" if training_entries else "missing"),
+            "coverage_status": coverage_status,
+            "fixture_status": fixture_status,
+            "provider_fixture_count": primary_diagnostic.get("fixture_count", 0),
+            "provider_error": primary_diagnostic.get("last_error"),
         })
 
     recent_predictions = MatchPrediction.objects.order_by("-match_date")[:8]
@@ -2002,8 +2019,8 @@ def _build_market_rows(prediction, feature_snapshot):
 
 
 def build_match_detail_context(prediction, source=None):
-    meta_home = get_team_metadata(prediction.home_team)
-    meta_away = get_team_metadata(prediction.away_team)
+    meta_home = get_team_metadata(prediction.home_team, prediction.competition)
+    meta_away = get_team_metadata(prediction.away_team, prediction.competition)
     home_name = normalize_display_team_name(meta_home.get("shortName"), fallback=prediction.home_team, max_length=28)
     away_name = normalize_display_team_name(meta_away.get("shortName"), fallback=prediction.away_team, max_length=28)
 
@@ -2173,8 +2190,8 @@ def build_won_slip_groups(selected_variant=None):
         pick.actual_score = None
         metadata_home_name = matched_prediction.home_team if matched_prediction else pick.home_team
         metadata_away_name = matched_prediction.away_team if matched_prediction else pick.away_team
-        meta_home = get_team_metadata(metadata_home_name)
-        meta_away = get_team_metadata(metadata_away_name)
+        meta_home = get_team_metadata(metadata_home_name, matched_prediction.competition if matched_prediction else pick.competition)
+        meta_away = get_team_metadata(metadata_away_name, matched_prediction.competition if matched_prediction else pick.competition)
         pick.display_home_team = normalize_display_team_name(
             meta_home.get("shortName"),
             fallback=pick.home_team,
@@ -2287,8 +2304,8 @@ def build_combo_builder_context(size=5, market_filter="", style="safe"):
     priced_legs = 0
     for item in selected:
         prediction = item["prediction"]
-        meta_home = get_team_metadata(prediction.home_team)
-        meta_away = get_team_metadata(prediction.away_team)
+        meta_home = get_team_metadata(prediction.home_team, prediction.competition)
+        meta_away = get_team_metadata(prediction.away_team, prediction.competition)
         if item["odds"]:
             combined_odds *= float(item["odds"])
             priced_legs += 1
@@ -2718,8 +2735,8 @@ def predictions_view(request):
 
     display_data = []
     for p in predictions:
-        meta_home = get_team_metadata(p.home_team)
-        meta_away = get_team_metadata(p.away_team)
+        meta_home = get_team_metadata(p.home_team, p.competition)
+        meta_away = get_team_metadata(p.away_team, p.competition)
         home_display_name = normalize_display_team_name(
             meta_home.get("shortName"),
             fallback=p.home_team,
@@ -2730,7 +2747,7 @@ def predictions_view(request):
         )
 
         comp_code = p.competition if p.competition in competitions else NAME_TO_CODE.get(p.competition.lower().strip(), "default")
-        competition_logo_path = static(f"logos/{comp_code}.png")
+        competition_logo_path = static(f"logos/{comp_code}.png") if os.path.exists(os.path.join(settings.BASE_DIR, "static", "logos", f"{comp_code}.png")) else country_flag_url(comp_code)
 
         actual_result = "-:-"
         actual_winner = None
@@ -2790,7 +2807,7 @@ def predictions_view(request):
 
     for row in league_table:
         team_name = row["team"]["name"]
-        meta = get_team_metadata(team_name)
+        meta = get_team_metadata(team_name, selected_code)
         row["team"]["shortName"] = normalize_display_team_name(
             meta.get("shortName"),
             fallback=team_name,
@@ -2876,8 +2893,8 @@ def build_correct_score_rows(match_date_str=None):
         if not top_scores:
             continue
 
-        meta_home = get_team_metadata(prediction.home_team)
-        meta_away = get_team_metadata(prediction.away_team)
+        meta_home = get_team_metadata(prediction.home_team, prediction.competition)
+        meta_away = get_team_metadata(prediction.away_team, prediction.competition)
 
         is_finished = prediction.status == "FINISHED"
         actual_home = prediction.actual_home_goals
@@ -3001,8 +3018,8 @@ def build_anytime_scorer_rows(match_date_str=None):
                 for alternate in alternates:
                     alternate["did_score"] = _normalize_player_name(alternate["name"]) in actual_scorers
 
-        meta_home = get_team_metadata(prediction.home_team)
-        meta_away = get_team_metadata(prediction.away_team)
+        meta_home = get_team_metadata(prediction.home_team, competition_code)
+        meta_away = get_team_metadata(prediction.away_team, competition_code)
         rows.append({
             "match_date": prediction.match_date.strftime("%Y-%m-%d"),
             "match_time": get_cached_kickoff_time(
@@ -3093,7 +3110,7 @@ def ajax_league_table(request):
     for row in table:
         team = row.get("team", {})
         name = team.get("name", "")
-        meta = get_team_metadata(name)
+        meta = get_team_metadata(name, comp)
         team["shortName"] = meta.get("shortName") or team.get("shortName") or name
         team["crest"] = meta.get("crest") or team.get("crest") or static("logos/default.png")
     html = render_to_string("partials/league_table.html", {"league_table": table})
@@ -3348,8 +3365,8 @@ def export_top_picks(request, format):
             competition_code = matched_prediction.competition if matched_prediction else None
             metadata_home_name = matched_prediction.home_team if matched_prediction else pick.home_team
             metadata_away_name = matched_prediction.away_team if matched_prediction else pick.away_team
-            home_meta = get_team_metadata(metadata_home_name)
-            away_meta = get_team_metadata(metadata_away_name)
+            home_meta = get_team_metadata(metadata_home_name, competition_code)
+            away_meta = get_team_metadata(metadata_away_name, competition_code)
             home_name = normalize_display_team_name(
                 home_meta.get("shortName"),
                 fallback=pick.home_team,

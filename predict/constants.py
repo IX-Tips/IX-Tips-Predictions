@@ -199,13 +199,13 @@ def model_cache_key(comp_code):
     return f"model_bundle::{comp_code}"
 
 
-def get_team_metadata(name):
+def get_team_metadata(name, competition_code=None):
     meta = cache.get(team_meta_cache_key(name), {"shortName": name, "crest": None})
-    # Fall back to the league's country flag when a team has no badge, so the UI
-    # shows a flag rather than nothing/just the name (e.g. football-data.co.uk
-    # leagues have no crests).
-    if not meta.get("crest") and meta.get("competition"):
-        flag = country_flag_url(meta["competition"])
+    # UK/OM fixture feeds do not include team crests. Use the league country
+    # flag when no actual team badge is available.
+    fallback_competition = competition_code or meta.get("competition")
+    if not meta.get("crest") and fallback_competition:
+        flag = country_flag_url(fallback_competition)
         if flag:
             meta = {**meta, "crest": flag}
     return meta
