@@ -87,8 +87,19 @@ class TopPick(models.Model):
     )
 
     class Meta:
-        unique_together = ('match_date', 'home_team', 'away_team', 'variant')
         ordering = ['match_date']
+        constraints = [
+            models.UniqueConstraint(
+                fields=["match_date", "home_team", "away_team", "variant"],
+                condition=models.Q(variant__in=["1", "2", "5"]),
+                name="unique_regular_top_pick_fixture_variant",
+            ),
+            models.UniqueConstraint(
+                fields=["match_date", "home_team", "away_team", "variant", "slip_batch"],
+                condition=models.Q(variant__in=["3", "4"]),
+                name="unique_batched_top_pick_fixture_variant",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.match_date} | {self.variant} | {self.home_team} vs {self.away_team} - {self.tip} ({self.confidence}%)"
