@@ -1646,10 +1646,14 @@ def train_models(X, y_home, y_away, sample_weight=None):
         shap_values = explainer.shap_values(X_te.iloc[:100])
         importance = np.abs(shap_values).mean(axis=0)
         top = sorted(zip(X_te.columns, importance), key=lambda x: -x[1])[:15]
-        logger.info(f" SHAP top features: {' | '.join(f'{n}={v:.3f}' for n,v in top)}")
+        logger.info(f" SHAP top features: {' | '.join(f'{name}={value:.3f}' for name,value in top)}")
     except Exception as e:
         logger.info(f" SHAP skipped ({e})")
 
+    # Keep the chronological holdout for evaluation/calibration, then refit
+    # the deployed estimators on all available history.
+    model_home.fit(X_numeric, y_home, sample_weight=sample_weight)
+    model_away.fit(X_numeric, y_away, sample_weight=sample_weight)
     return model_home, model_away, label_encoder, calibrator
 
 
@@ -1771,8 +1775,9 @@ def _poisson_best_scoreline(home_rate, away_rate, seed=None):
     scores, weights = [], []
     total = 0.0
     best, best_w = (0, 0), -1.0
-    for h in range(0, 7):
-        for a in range(0, 7):
+    max_goals = min(12, max(6, int(math.ceil(max(float(home_rate), float(away_rate)) + 4))))
+    for h in range(0, max_goals + 1):
+        for a in range(0, max_goals + 1):
             p = float(exp(-home_rate) * (home_rate ** h) / _fac(h)) * \
                 float(exp(-away_rate) * (away_rate ** a) / _fac(a))
             scores.append((h, a))
@@ -1914,12 +1919,13 @@ def predict_match_outcome(home_team, away_team, models, label_encoder=None):
 
 # Import models here to avoid circular import when this module is imported by Django startup code
 try:
-    from .models import MatchPrediction, TopPick, MatchOdds
+    from .models import MatchPrediction, TopPick, MatchOdds, SlipBatch
 except Exception:
     # If models are not importable (e.g., during unit tests), define placeholders
     MatchPrediction = None
     TopPick = None
     MatchOdds = None
+    SlipBatch = None
 
 
 def save_predictions(matches, model_home=None, model_away=None, le=None, match_date=None, competition_code=None, actual_result_map=None):
