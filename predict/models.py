@@ -46,12 +46,29 @@ class MatchPrediction(models.Model):
     def __str__(self):
         return f"{self.home_team} vs {self.away_team} ({self.match_date})"
 
+class SlipBatch(models.Model):
+    VARIANT_CHOICES = (("3", "Running Bet"), ("4", "Mshipi"))
+    STATUS_CHOICES = (("ACTIVE", "Active"), ("LOST", "Lost"), ("WON", "Won"))
+
+    variant = models.CharField(max_length=1, choices=VARIANT_CHOICES)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="ACTIVE", db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{this.get_variant_display()} #{this.pk} ({this.status})"
+
+
 class TopPick(models.Model):
     VARIANT_CHOICES = (
         ("1", "Sure 1"),
         ("2", "Sure 2"),
         ("3", "Running Bet"),
         ("4", "Mshipi"),
+        ("5", "12"),
     )
 
     match_date = models.DateField(db_index=True)
@@ -64,6 +81,10 @@ class TopPick(models.Model):
     actual_tip = models.CharField(max_length=50, blank=True, null=True)  # new
     is_correct = models.BooleanField(null=True,blank=True) 
     odds = models.FloatField(null=True, blank=True)
+    slip_batch = models.ForeignKey(
+        "SlipBatch", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="picks",
+    )
 
     class Meta:
         unique_together = ('match_date', 'home_team', 'away_team', 'variant')
