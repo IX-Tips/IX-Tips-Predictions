@@ -27,7 +27,7 @@ from django.utils import timezone
 from celery import current_app
 from django_celery_beat.models import PeriodicTask
 
-from .models import ComboSlip, ComboSlipLeg, MatchOdds, MatchPrediction, TopPick
+from .models import ComboSlip, ComboSlipLeg, MatchOdds, MatchPrediction, TopPick, SlipBatch
 from .forms import ActualResultForm, PredictionForm, LivePredictionForm
 from .constants import API_TOKEN, COMPETITIONS, ODDS_API_KEY as SETTINGS_ODDS_API_KEY, country_flag_url, get_team_metadata
 from .utils import (
@@ -656,7 +656,7 @@ def top_picks_view(request):
     match_date_str = request.GET.get("match_date")
     show_past = request.GET.get("past") == "1"
     variant = request.GET.get("variant", "1")
-    variant = variant if variant in {"1", "2", "3", "4"} else "1"
+    variant = variant if variant in {"1", "2", "3", "4", "5"} else "1"
 
     today = date.today()
 
@@ -669,17 +669,22 @@ def top_picks_view(request):
         upcoming_dates = TopPick.objects.filter(variant=variant, match_date__gte=today).order_by("match_date").values_list("match_date", flat=True).distinct()
         match_date = upcoming_dates.first() if upcoming_dates.exists() else today
 
-    # Fetch from DB
+    # Running Bet/Mshipi display one immutable accumulator batch.
+    active_batch = None
+    if variant in {"3", "4"} and not show_past:
+        active_batch = SlipBatch.objects.filter(variant=variant, status="ACTIVE").order_by("-created_at").first()
+
     if show_past:
         if variant in {"3", "4"}:
             picks_qs = TopPick.objects.filter(variant=variant, match_date__lt=today).order_by("-confidence", "match_date")
         else:
             picks_qs = TopPick.objects.filter(variant=variant, match_date__lt=today).order_by("-match_date")
+    elif variant in {"3", "4"}:
+        picks_qs = TopPick.objects.filter(slip_batch=active_batch).order_by("-confidence", "match_date") if active_batch else TopPick.objects.none()
+    elif variant == "5":
+        picks_qs = TopPick.objects.filter(variant=variant, match_date__gte=today).order_by("-confidence", "match_date")
     else:
-        if variant in {"3", "4"}:
-            picks_qs = TopPick.objects.filter(variant=variant, match_date__gte=today).order_by("-confidence", "match_date")
-        else:
-            picks_qs = TopPick.objects.filter(match_date=match_date, variant=variant)
+        picks_qs = TopPick.objects.filter(match_date=match_date, variant=variant)
 
     pick_keys = list(
         picks_qs.values(
@@ -691,7 +696,7 @@ def top_picks_view(request):
     source = "cached"
     prediction_count_for_date = 0
     if not show_past and match_date:
-        if variant in {"3", "4"}:
+        if variant in {"3", "4", "5"}:
             prediction_count_for_date = MatchPrediction.objects.filter(match_date__gte=today).count()
         else:
             prediction_count_for_date = MatchPrediction.objects.filter(match_date=match_date).count()
@@ -700,7 +705,7 @@ def top_picks_view(request):
         and prediction_count_for_date > 0
         and not pick_keys
         and (
-            (variant in {"3", "4"} and True)
+            (variant in {"3", "4", "5"} and True)
             or match_date >= today
         )
     )
@@ -708,13 +713,16 @@ def top_picks_view(request):
     if not pick_keys and can_generate_top_picks:
         generation_limit = 20 if variant == "4" else 10
         predictions_by_date = get_top_predictions(limit=generation_limit, variant=variant)
-        if variant in {"3", "4"}:
+        if variant in {"3", "4", "5"}:
             store_top_pick_for_date(predictions_by_date, variant=variant)
         else:
             target_key = match_date.strftime("%Y-%m-%d")
             if target_key in predictions_by_date:
                 store_top_pick_for_date({target_key: predictions_by_date[target_key]}, variant=variant)
         if variant in {"3", "4"}:
+            active_batch = SlipBatch.objects.filter(variant=variant, status="ACTIVE").order_by("-created_at").first()
+            picks_qs = TopPick.objects.filter(slip_batch=active_batch).order_by("-confidence", "match_date") if active_batch else TopPick.objects.none()
+        elif variant == "5":
             picks_qs = TopPick.objects.filter(variant=variant, match_date__gte=today).order_by("-confidence", "match_date")
         else:
             picks_qs = TopPick.objects.filter(match_date=match_date, variant=variant)
@@ -762,6 +770,8 @@ def top_picks_view(request):
         picks_qs = picks_qs[:10]
     elif variant == "4":
         picks_qs = picks_qs[:20]
+    elif variant == "5":
+        picks_qs = picks_qs[:10]
 
     picks = list(
         picks_qs.values(
@@ -904,7 +914,8 @@ def top_picks_view(request):
         "prediction_count_for_date": prediction_count_for_date,
         "can_generate_top_picks": can_generate_top_picks,
         "variant": variant,
-        "header_label": "Mshipi" if variant == "4" else ("All Upcoming Dates" if variant == "3" else match_date.strftime("%B %d, %Y")),
+        "header_label": "Mshipi" if variant == "4" else ("12" if variant == "5" else ("All Upcoming Dates" if variant == "3" else match_date.strftime("%B %d, %Y"))),
+        "slip_batch": active_batch,
         "accumulator_summary": accumulator_summary,
         "slip_summary": build_top_pick_slip_summary(),
         "league_table": league_table,
@@ -916,7 +927,7 @@ def top_picks_view(request):
 @require_GET
 def won_slips_view(request):
     selected_variant = request.GET.get("variant")
-    selected_variant = selected_variant if selected_variant in {"1", "2", "3", "4"} else ""
+    selected_variant = selected_variant if selected_variant in {"1", "2", "3", "4", "5"} else ""
     won_slips = build_won_slip_groups(selected_variant or None)
     selected_code = request.GET.get("competition", "PL")
     league_table = get_league_table(selected_code)
@@ -930,6 +941,7 @@ def won_slips_view(request):
             ("2", "Sure 2"),
             ("3", "Running Bet"),
             ("4", "Mshipi"),
+            ("5", "12"),
         ],
         "league_table": league_table,
         "competitions": competitions,
@@ -2134,6 +2146,7 @@ def build_top_pick_slip_summary():
         "2": "Sure 2",
         "3": "Running Bet",
         "4": "Mshipi",
+        "5": "12",
     }
     grouped_rows = defaultdict(list)
     for row in TopPick.objects.values("variant", "match_date", "actual_tip", "is_correct"):
@@ -2170,6 +2183,7 @@ def build_won_slip_groups(selected_variant=None):
         "2": "Sure 2",
         "3": "Running Bet",
         "4": "Mshipi",
+        "5": "12",
     }
     slips = defaultdict(list)
     qs = TopPick.objects.all().order_by("-match_date", "variant", "home_team")

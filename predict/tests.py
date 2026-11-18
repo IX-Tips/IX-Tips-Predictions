@@ -189,3 +189,12 @@ class ScorelinePredictionTests(TestCase):
         self.assertIn("0-0", score_map)
         self.assertIn("1-1", score_map)
         self.assertGreaterEqual(score_map["0-0"], score_map.get("0-2", 0.0))
+
+
+
+class HighScoringScorelineTests(TestCase):
+    def test_high_goal_rates_allow_three_three_and_three_two_predictions(self):
+        scorelines = scoreline_predictions(3.0, 3.0, top_n=5)
+        scores = {item["score"] for item in scorelines}
+        self.assertIn("3-3", scores)
+        self.assertIn("3-2", scores)

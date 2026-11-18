@@ -62,9 +62,8 @@ def scoreline_predictions(predicted_home_goals, predicted_away_goals, max_goals=
         if home_goals == away_goals:
             # Very slight draw boost
             return 1.0 + (0.04 * closeness)
-        if home_goals + away_goals >= 6:
-            # Slight suppression of extreme scorelines
-            return 0.92
+        # Let the fitted goal rates determine high-scoring outcomes. The
+        # independent Poisson probabilities already penalize extreme totals.
         return 1.0
 
     candidates = []
@@ -1510,6 +1509,7 @@ def train_models(X, y_home, y_away, sample_weight=None):
 
     X_numeric = X_numeric.fillna(0)
     sample_weight = None if sample_weight is None else np.asarray(sample_weight, dtype=float)
+    n = len(X_numeric)
 
     # ── Walk-forward validation ───────────────────────────────────────────
     try:
@@ -1646,10 +1646,14 @@ def train_models(X, y_home, y_away, sample_weight=None):
         shap_values = explainer.shap_values(X_te.iloc[:100])
         importance = np.abs(shap_values).mean(axis=0)
         top = sorted(zip(X_te.columns, importance), key=lambda x: -x[1])[:15]
-        logger.info(f" SHAP top features: {' | '.join(f'{n}={v:.3f}' for n,v in top)}")
+        logger.info(f" SHAP top features: {' | '.join(f'{name}={value:.3f}' for name,value in top)}")
     except Exception as e:
         logger.info(f" SHAP skipped ({e})")
 
+    # Keep the chronological holdout for evaluation/calibration, then refit
+    # the deployed estimators on all available history.
+    model_home.fit(X_numeric, y_home, sample_weight=sample_weight)
+    model_away.fit(X_numeric, y_away, sample_weight=sample_weight)
     return model_home, model_away, label_encoder, calibrator
 
 
@@ -1771,8 +1775,9 @@ def _poisson_best_scoreline(home_rate, away_rate, seed=None):
     scores, weights = [], []
     total = 0.0
     best, best_w = (0, 0), -1.0
-    for h in range(0, 7):
-        for a in range(0, 7):
+    max_goals = min(12, max(6, int(math.ceil(max(float(home_rate), float(away_rate)) + 4))))
+    for h in range(0, max_goals + 1):
+        for a in range(0, max_goals + 1):
             p = float(exp(-home_rate) * (home_rate ** h) / _fac(h)) * \
                 float(exp(-away_rate) * (away_rate ** a) / _fac(a))
             scores.append((h, a))
@@ -1914,12 +1919,13 @@ def predict_match_outcome(home_team, away_team, models, label_encoder=None):
 
 # Import models here to avoid circular import when this module is imported by Django startup code
 try:
-    from .models import MatchPrediction, TopPick, MatchOdds
+    from .models import MatchPrediction, TopPick, MatchOdds, SlipBatch
 except Exception:
     # If models are not importable (e.g., during unit tests), define placeholders
     MatchPrediction = None
     TopPick = None
     MatchOdds = None
+    SlipBatch = None
 
 
 def save_predictions(matches, model_home=None, model_away=None, le=None, match_date=None, competition_code=None, actual_result_map=None):
@@ -2419,8 +2425,12 @@ def get_mshipi_predictions(limit=20):
         selected_fixture_keys.add(fixture_key)
         market_counts[market] += 1
 
+    if len(selected) < 20:
+        logger.info("Mshipi not generated: %s/20 selections available", len(selected))
+        return {}
+
     grouped = defaultdict(list)
-    for candidate in sorted(selected[:limit], key=lambda item: item["confidence_value"], reverse=True):
+    for candidate in sorted(selected[:20], key=lambda item: item["confidence_value"], reverse=True):
         grouped[candidate["match_date"]].append({
             "home_team": candidate["home_team"],
             "away_team": candidate["away_team"],
@@ -2433,12 +2443,47 @@ def get_mshipi_predictions(limit=20):
     return dict(grouped)
 
 
+def get_12_predictions(limit=10):
+    """Build ten unique straight-result picks; draw selections are excluded."""
+    candidates_by_date = _collect_top_pick_candidates(rank_limit=6)
+    candidates = []
+    for date_str, day_candidates in candidates_by_date.items():
+        for candidate in day_candidates:
+            if candidate.get("tip") not in {"1", "2"}:
+                continue
+            confidence = float(candidate.get("confidence_value") or candidate.get("confidence") or 0)
+            candidates.append({**candidate, "match_date": date_str, "confidence_value": confidence})
+    candidates.sort(key=lambda item: (item["confidence_value"], item["match_date"]), reverse=True)
+    selected, seen = [], set()
+    for candidate in candidates:
+        key = (candidate["match_date"], candidate["home_team"], candidate["away_team"])
+        if key in seen:
+            continue
+        selected.append(candidate)
+        seen.add(key)
+        if len(selected) == 10:
+            break
+    if len(selected) < 10:
+        logger.info("12 picks not generated: only %s/10 unique win selections available", len(selected))
+        return {}
+    grouped = defaultdict(list)
+    for item in selected:
+        grouped[item["match_date"]].append({
+            "home_team": item["home_team"], "away_team": item["away_team"],
+            "tip": item["tip"], "confidence": f"{item['confidence_value']:.0f}",
+            "match_date": item["match_date"], "odds": item.get("odds"),
+        })
+    return dict(grouped)
+
+
 def get_top_predictions_for_variant(limit=10, variant="1"):
     variant = str(variant)
     if variant == "3":
         return get_running_bet_predictions(limit=limit)
     if variant == "4":
         return get_mshipi_predictions(limit=max(limit, 20))
+    if variant == "5":
+        return get_12_predictions(limit=10)
     return get_top_predictions(limit=limit, variant=int(variant))
 
 
@@ -2457,7 +2502,29 @@ def store_top_pick_for_date(predictions_by_date, variant="1"):
         return 0
 
     processed_count = 0
+    variant = str(variant)
+    batch = None
     with transaction.atomic():
+        if variant in {"3", "4"} and SlipBatch is not None:
+            if connection.vendor == "postgresql":
+                with connection.cursor() as cursor:
+                    cursor.execute("SELECT pg_advisory_xact_lock(%s)", [900000 + int(variant)])
+            batch = SlipBatch.objects.select_for_update().filter(
+                variant=variant, status="ACTIVE"
+            ).order_by("-created_at").first()
+            if batch:
+                return batch.picks.count()
+            valid_total = sum(
+                1 for day_picks in (predictions_by_date or {}).values()
+                for pick in (day_picks or [])
+                if pick.get("home_team") and pick.get("away_team") and pick.get("tip")
+            )
+            if valid_total == 0:
+                return 0
+            if variant == "4" and valid_total < 20:
+                logger.info("Mshipi requires 20 legs; only %s were available", valid_total)
+                return 0
+            batch = SlipBatch.objects.create(variant=variant, status="ACTIVE")
         for date_str, picks in (predictions_by_date or {}).items():
             try:
                 match_date = datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -2488,11 +2555,11 @@ def store_top_pick_for_date(predictions_by_date, variant="1"):
                     "odds": pick.get("odds"),
                 })
 
+            existing_filter = {"match_date": match_date, "variant": variant}
+            if variant in {"3", "4"}:
+                existing_filter["slip_batch"] = batch
             existing_rows = list(
-                TopPick.objects.select_for_update().filter(
-                    match_date=match_date,
-                    variant=variant,
-                )
+                TopPick.objects.select_for_update().filter(**existing_filter)
             )
             existing_by_fixture = {
                 (row.home_team, row.away_team): row
@@ -2514,13 +2581,19 @@ def store_top_pick_for_date(predictions_by_date, variant="1"):
                         tip=values["tip"],
                         confidence=values["confidence"],
                         odds=values["odds"],
+                        slip_batch=batch,
                     ))
                     continue
 
-                # Never rewrite a settled result or its original prediction.
+                # Preserve any legacy unsettled accumulator row as part of the
+                # newly tracked batch; never replace its original selection.
+                if variant in {"3", "4"}:
+                    if existing.slip_batch_id is None:
+                        existing.slip_batch = batch
+                        to_update.append(existing)
+                    continue
                 if existing.actual_tip is not None or existing.is_correct is not None:
                     continue
-
                 existing.tip = values["tip"]
                 existing.confidence = values["confidence"]
                 existing.odds = values["odds"]
@@ -2528,7 +2601,7 @@ def store_top_pick_for_date(predictions_by_date, variant="1"):
 
             # Remove obsolete unsettled predictions, but retain historical
             # records that already have an outcome.
-            stale_ids = [
+            stale_ids = [] if variant in {"3", "4"} else [
                 row.pk for row in existing_rows
                 if (row.home_team, row.away_team) not in desired_keys
                 and row.actual_tip is None
@@ -2542,7 +2615,7 @@ def store_top_pick_for_date(predictions_by_date, variant="1"):
             if to_update:
                 TopPick.objects.bulk_update(
                     to_update,
-                    fields=["tip", "confidence", "odds"],
+                    fields=["tip", "confidence", "odds", "slip_batch"],
                 )
 
             processed_count += len(desired)
@@ -2651,6 +2724,17 @@ def update_actuals_for_top_picks(picks_qs):
         pick.is_correct = None if actual_tip == "Refund" else (pick.tip == actual_tip)
         pick.save()
         updated += 1
+        if pick.slip_batch_id:
+            batch = pick.slip_batch
+            legs = list(batch.picks.all())
+            if any(leg.is_correct is False for leg in legs):
+                batch.status = "LOST"
+                batch.closed_at = timezone.now()
+                batch.save(update_fields=["status", "closed_at"])
+            elif legs and all(leg.actual_tip is not None for leg in legs):
+                batch.status = "WON"
+                batch.closed_at = timezone.now()
+                batch.save(update_fields=["status", "closed_at"])
     return updated
 
 
