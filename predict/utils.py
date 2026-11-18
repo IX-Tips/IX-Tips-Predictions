@@ -2549,11 +2549,11 @@ def store_top_pick_for_date(predictions_by_date, variant="1"):
                     "odds": pick.get("odds"),
                 })
 
+            existing_filter = {"match_date": match_date, "variant": variant}
+            if variant in {"3", "4"}:
+                existing_filter["slip_batch"] = batch
             existing_rows = list(
-                TopPick.objects.select_for_update().filter(
-                    match_date=match_date,
-                    variant=variant,
-                )
+                TopPick.objects.select_for_update().filter(**existing_filter)
             )
             existing_by_fixture = {
                 (row.home_team, row.away_team): row
