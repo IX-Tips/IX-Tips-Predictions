@@ -1509,6 +1509,7 @@ def train_models(X, y_home, y_away, sample_weight=None):
 
     X_numeric = X_numeric.fillna(0)
     sample_weight = None if sample_weight is None else np.asarray(sample_weight, dtype=float)
+    n = len(X_numeric)
 
     # ── Walk-forward validation ───────────────────────────────────────────
     try:
