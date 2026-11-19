@@ -642,11 +642,7 @@ def fetch_training_data(competition_code, seasons=None):
             )
             continue
 
-    return pd.DataFrame(
-        all_matches,
-        columns=["home_team", "away_team", "home_goals", "away_goals", "utc_date",
-                 "avgH", "avgD", "avgA", "over25"],
-    )
+    return pd.DataFrame(all_matches)
 
 
 def fetch_training_data_all_seasons(competition_code, seasons=None):
