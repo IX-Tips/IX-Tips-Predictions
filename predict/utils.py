@@ -25,6 +25,7 @@ from .constants import (
     MODEL_CACHE_TIMEOUT,
     ODDS_API_KEY,
     TRAINING_CACHE_TIMEOUT,
+    OPEN_MATCHDAY_TRAINING_CACHE_TIMEOUT,
     get_team_metadata,
     model_cache_key,
     training_data_cache_key,
@@ -560,47 +561,78 @@ def fetch_competition_scorers(competition_code):
 
 def fetch_training_data(competition_code, seasons=None):
     """
-    Collect finished matches for a competition across seasons.
-    Returns a DataFrame with columns: home_team, away_team, home_goals, away_goals, utc_date
+    Collect finished matches across configured providers and seasons.
+
+    The primary provider is retained first (so its odds and richer metadata win
+    on duplicate matches); Open Matchday supplements missing historical rows
+    for its current published season. No API token is required for public CSV
+    providers.
     """
-    # Provider credentials are validated by the selected provider. UK/LF/AF
-    # sources do not require the football-data.org API token.
+    from .providers import om_fetch_matches_by_season, supports_open_matchday
+
     if seasons is None:
         seasons = get_default_training_seasons()
+
     all_matches = []
+    seen_matches = set()
+
     for season in seasons:
         try:
-            matches = fetch_matches_by_season(API_TOKEN, competition_code, season)
-            if not matches:
-                # Fallback to open-matchday for its current published season.
-                # It is intentionally not used to fabricate older historical rows.
-                from .providers import om_fetch_matches_by_season, supports_open_matchday
-                if supports_open_matchday(competition_code):
-                    matches = om_fetch_matches_by_season(competition_code, season)
-            if matches == []:
+            primary_matches = fetch_matches_by_season(API_TOKEN, competition_code, season) or []
+            supplementary_matches = (
+                om_fetch_matches_by_season(competition_code, season)
+                if supports_open_matchday(competition_code)
+                else []
+            )
+
+            if not primary_matches and not supplementary_matches:
                 logger.info(
-                    "No season data returned for %s season=%s. This may indicate an auth issue, API limit, or no coverage.",
+                    "No season data returned for %s season=%s.",
                     competition_code,
                     season,
                 )
-            for m in matches:
-                if m.get("status") == "FINISHED":
-                    row = {
-                        "home_team": m["homeTeam"]["name"],
-                        "away_team": m["awayTeam"]["name"],
-                        "home_goals": m["score"]["fullTime"]["home"],
-                        "away_goals": m["score"]["fullTime"]["away"],
-                        "utc_date": m.get("utcDate"),
-                    }
-                    # Preserve betting odds when available (UK provider)
-                    odds = m.get("odds") or {}
-                    if odds.get("avgH"):
-                        row["avgH"] = odds["avgH"]
-                        row["avgD"] = odds["avgD"]
-                        row["avgA"] = odds["avgA"]
-                    if odds.get("over25"):
-                        row["over25"] = odds["over25"]
-                    all_matches.append(row)
+
+            # Primary provider first: preserve its odds when both sources carry
+            # the same result. OM still contributes every additional result.
+            for match in list(primary_matches) + list(supplementary_matches or []):
+                if match.get("status") != "FINISHED":
+                    continue
+
+                home = ((match.get("homeTeam") or {}).get("name") or "").strip()
+                away = ((match.get("awayTeam") or {}).get("name") or "").strip()
+                score = (match.get("score") or {}).get("fullTime") or {}
+                home_goals, away_goals = score.get("home"), score.get("away")
+                match_day = (match.get("utcDate") or "")[:10]
+                if not home or not away or not match_day or home_goals is None or away_goals is None:
+                    continue
+
+                # Normalize names consistently with the rest of this module so
+                # provider spelling differences do not inflate training rows.
+                match_key = (
+                    match_day,
+                    _normalize_team_lookup_value(home),
+                    _normalize_team_lookup_value(away),
+                )
+                if match_key in seen_matches:
+                    continue
+                seen_matches.add(match_key)
+
+                row = {
+                    "home_team": home,
+                    "away_team": away,
+                    "home_goals": home_goals,
+                    "away_goals": away_goals,
+                    "utc_date": match.get("utcDate"),
+                }
+                odds = match.get("odds") or {}
+                if odds.get("avgH") is not None:
+                    row["avgH"] = odds["avgH"]
+                    row["avgD"] = odds.get("avgD")
+                    row["avgA"] = odds.get("avgA")
+                if odds.get("over25") is not None:
+                    row["over25"] = odds["over25"]
+                all_matches.append(row)
+
         except Exception as exc:
             logger.exception(
                 "Failed to fetch training data for competition=%s season=%s error=%s",
@@ -609,7 +641,12 @@ def fetch_training_data(competition_code, seasons=None):
                 exc,
             )
             continue
-    return pd.DataFrame(all_matches)
+
+    return pd.DataFrame(
+        all_matches,
+        columns=["home_team", "away_team", "home_goals", "away_goals", "utc_date",
+                 "avgH", "avgD", "avgA", "over25"],
+    )
 
 
 def fetch_training_data_all_seasons(competition_code, seasons=None):
@@ -635,7 +672,13 @@ def fetch_training_data_all_seasons(competition_code, seasons=None):
             competition_code,
         )
         return pd.DataFrame(columns=["home_team", "away_team", "home_goals", "away_goals", "utc_date"])
-    cache.set(cache_key, df, timeout=TRAINING_CACHE_TIMEOUT)
+    from .providers import supports_open_matchday
+    cache_timeout = (
+        OPEN_MATCHDAY_TRAINING_CACHE_TIMEOUT
+        if supports_open_matchday(competition_code)
+        else TRAINING_CACHE_TIMEOUT
+    )
+    cache.set(cache_key, df, timeout=cache_timeout)
     return df
 
 
