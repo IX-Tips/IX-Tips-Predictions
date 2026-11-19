@@ -113,15 +113,33 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
 @shared_task
 def cache_training_data():
     logger.info("Starting training data caching")
+    from django.core.cache import caches
+    from .constants import model_cache_key
+    from .providers import supports_open_matchday
+    from .utils import _MODEL_REGISTRY
+
+    model_store = caches["model_cache"]
     for comp in COMPETITIONS:
         key = f"training_data_{comp}"
-        df = fetch_training_data_all_seasons(comp)
 
+        # OM is refreshed daily. Remove its older (possibly seven-day) cache
+        # entry before fetching so a new published results CSV is picked up.
+        if supports_open_matchday(comp):
+            cache.delete(key)
+
+        df = fetch_training_data_all_seasons(comp)
         if df is not None and not df.empty:
-            cache.set(key, df, timeout=TRAINING_CACHE_TIMEOUT)
-            logger.info(f" Cached {len(df)} records for {comp}")
+            # fetch_training_data_all_seasons owns cache writes and applies the
+            # shorter OM-specific TTL. Do not overwrite it with seven days.
+            if supports_open_matchday(comp):
+                _MODEL_REGISTRY.pop(comp, None)
+                try:
+                    model_store.delete(model_cache_key(comp))
+                except Exception as exc:
+                    logger.warning("Could not invalidate cached model for %s: %s", comp, exc)
+            logger.info("Cached %s records for %s", len(df), comp)
         else:
-            logger.info(f" No data fetched for {comp}. Check prior API error logs for auth/network failures.")
+            logger.info("No data fetched for %s. Check provider diagnostics.", comp)
 
 
 @shared_task
