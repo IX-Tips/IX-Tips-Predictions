@@ -96,6 +96,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "predict.middleware.RequestPerformanceMiddleware",  # opt-in request/SQL timing
     "whitenoise.middleware.WhiteNoiseMiddleware",   # static files in production
     "django.middleware.cache.UpdateCacheMiddleware",  # page cache (must be first after security)
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -110,6 +111,10 @@ MIDDLEWARE = [
 
 CACHE_MIDDLEWARE_SECONDS = 300      # cache pages for 5 minutes
 CACHE_MIDDLEWARE_KEY_PREFIX = "ixtips"
+
+# Opt-in request telemetry. Enable with IXTIPS_PERF_LOGGING=1; no SQL text is logged.
+PERF_LOGGING_ENABLED = os.environ.get("IXTIPS_PERF_LOGGING", "0").strip().lower() in {"1", "true", "yes", "on"}
+PERF_LOG_MIN_MS = float(os.environ.get("IXTIPS_PERF_LOG_MIN_MS", "100"))
 
 ROOT_URLCONF = "score_predictor.urls"
 
