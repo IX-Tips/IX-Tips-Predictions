@@ -123,6 +123,29 @@ class BulkFixtureDiscoveryTests(TestCase):
         self.assertEqual(fetch_by_date.call_count, 2)
         self.assertEqual(om_matches.call_count, 1)
 
+    @patch("predict.utils.find_upcoming_match_dates", return_value=["2026-11-21"])
+    @patch("predict.fixture_sources.fetch_fixture_matches_by_date")
+    @patch("predict.providers.of_current_matches", return_value=[])
+    @patch("predict.fixture_sources.supports_openfootball", return_value=True)
+    @patch("predict.fixture_sources.supports_open_matchday", return_value=False)
+    @patch("predict.fixture_sources.get_provider", return_value="OF")
+    def test_empty_openfootball_season_uses_configured_date_fallback(
+        self, provider, supports_om, supports_of, of_matches, fetch_by_date, find_dates
+    ):
+        fetch_by_date.return_value = [{
+            "utcDate": "2026-11-21T15:00:00Z",
+            "status": "TIMED",
+            "homeTeam": {"name": "African Club"},
+            "awayTeam": {"name": "Visiting Club"},
+        }]
+
+        from predict.fixture_sources import fetch_upcoming_fixture_groups
+        grouped = fetch_upcoming_fixture_groups(None, "KEN", days_ahead=45)
+
+        self.assertIn("2026-11-21", grouped)
+        find_dates.assert_called_once()
+        fetch_by_date.assert_called_once_with(None, "KEN", "2026-11-21")
+
     @patch("predict.fixture_sources.fetch_fixture_matches_by_date")
     @patch("predict.fixture_sources.supports_open_matchday", return_value=False)
     def test_non_bulk_leagues_keep_date_lookup_fallback(self, supports, fetch_by_date):
