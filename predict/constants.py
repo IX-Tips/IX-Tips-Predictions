@@ -405,7 +405,7 @@ FOOTBALL_COMPETITION_LOGO_SLUGS = {
 def _normalize_football_logo_name(name):
     value = unicodedata.normalize("NFKD", str(name or ""))
     value = value.encode("ascii", "ignore").decode("ascii").lower()
-    value = re.sub(r"\\b(?:football club|soccer club|fc|cf|sc|ac|afc|club)\\b", " ", value)
+    value = re.sub(r"\b(?:football club|soccer club|fc|cf|sc|ac|afc|club)\b", " ", value)
     return re.sub(r"[^a-z0-9]+", " ", value).strip()
 
 
@@ -461,25 +461,31 @@ def get_football_team_logo_url(team_name, competition_code=None):
     return None
 
 
-def get_football_competition_logo_url(competition_code):
-    location = FOOTBALL_COMPETITION_LOGO_SLUGS.get(competition_code)
-    if not location:
-        return None
-    country_slug, target_slug = location
+@lru_cache(maxsize=1)
+def _football_competition_logo_index():
     catalog_path = os.path.join(os.path.dirname(__file__), "data", "football_logos.json")
     try:
         with open(catalog_path, encoding="utf-8") as catalog_file:
             catalog = json.load(catalog_file)
     except (OSError, ValueError):
+        return {}
+    return {
+        country_slug: {
+            item.get("slug"): item
+            for item in country.get("leagues", [])
+            if item.get("slug") and item.get("hash")
+        }
+        for country_slug, country in catalog.get("countries", {}).items()
+    }
+
+
+def get_football_competition_logo_url(competition_code):
+    location = FOOTBALL_COMPETITION_LOGO_SLUGS.get(competition_code)
+    if not location:
         return None
-    country = catalog.get("countries", {}).get(country_slug, {})
-    item = next(
-        (entry for entry in country.get("leagues", []) if entry.get("slug") == target_slug),
-        None,
-    )
-    if not item or not item.get("hash"):
-        return None
-    return _football_logo_url(country_slug, item)
+    country_slug, target_slug = location
+    item = _football_competition_logo_index().get(country_slug, {}).get(target_slug)
+    return _football_logo_url(country_slug, item) if item else None
 
 
 def get_team_metadata(name, competition_code=None):
