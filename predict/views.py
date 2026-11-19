@@ -57,7 +57,6 @@ from .utils import (
     update_actuals_for_top_picks,
     get_team_recent_form,
 )
-from .generate_logo_mapping import TEAM_LOGOS
 
 # -------------------------
 # CONFIG
@@ -2925,7 +2924,7 @@ def build_correct_score_rows(match_date_str=None):
                 competitions.get(prediction.competition, prediction.competition),
                 code=prediction.competition,
             ),
-            "competition_logo": static(f"logos/{prediction.competition}.png") if prediction.competition in competitions else None,
+            "competition_logo": resolve_competition_logo(prediction.competition),
             "home_team": normalize_display_team_name(meta_home.get("shortName"), fallback=prediction.home_team),
             "away_team": normalize_display_team_name(meta_away.get("shortName"), fallback=prediction.away_team),
             "home_logo": meta_home.get("crest"),
@@ -3171,7 +3170,7 @@ def league_table_view(request, competition_code):
         "competition_code": competition_code,
         "competition_name": competition_name,
         "competitions_grouped": COMPETITIONS,  # For dropdown with regions
-        "competition_logo": static(f"logos/{competition_code}.png")
+        "competition_logo": resolve_competition_logo(competition_code)
     })
 
 
