@@ -6,7 +6,7 @@ from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
-from .constants import COMPETITIONS, TRAINING_CACHE_TIMEOUT
+from .constants import COMPETITIONS
 from .models import MatchPrediction, TopPick
 from .fixture_sources import fetch_fixture_matches_by_date, fetch_upcoming_fixture_groups
 from .utils import (
@@ -60,8 +60,8 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
 
     df = cache.get(f"training_data_{competition_code}")
     if df is None:
+        # fetch_training_data_all_seasons owns the provider-specific cache TTL.
         df = fetch_training_data_all_seasons(competition_code)
-        cache.set(f"training_data_{competition_code}", df, timeout=TRAINING_CACHE_TIMEOUT)
 
     training_entries = len(df) if df is not None else 0
     if df is None or df.empty:
@@ -155,9 +155,10 @@ def update_metadata_task():
 @shared_task
 def store_daily_top_pick():
     stored = {}
-    for variant in ("1", "2", "3", "4"):
+    for variant in ("1", "2", "3", "4", "5", "6", "7"):
         # (delete now handled atomically inside store_top_pick_for_date)
-        predictions = get_top_predictions_for_variant(limit=(20 if variant == "4" else 10), variant=variant)
+        limit = 20 if variant == "4" else (12 if variant in {"5", "6", "7"} else 10)
+        predictions = get_top_predictions_for_variant(limit=limit, variant=variant)
         stored[variant] = store_top_pick_for_date(predictions, variant=variant)
     return stored
 
@@ -167,9 +168,9 @@ def refresh_daily_odds_cache():
 
     updated = update_all_odds()
     stored_top_picks = {}
-    for variant in ("1", "2", "3", "4"):
-        # (delete now handled atomically inside store_top_pick_for_date)
-        top_predictions = get_top_predictions_for_variant(limit=(20 if variant == "4" else 10), variant=variant)
+    for variant in ("1", "2", "3", "4", "5", "6", "7"):
+        limit = 20 if variant == "4" else (12 if variant in {"5", "6", "7"} else 10)
+        top_predictions = get_top_predictions_for_variant(limit=limit, variant=variant)
         stored_top_picks[variant] = store_top_pick_for_date(top_predictions, variant=variant)
     return {
         "odds_updates": updated,
@@ -178,10 +179,35 @@ def refresh_daily_odds_cache():
 
 @shared_task
 def refresh_live_match_data():
-    """
-    Refresh live match status, actual scores, cached kickoff metadata, odds, and top picks.
-    Runs in the background so the UI does not need to do the expensive refresh itself.
-    """
+    """Run one live refresh at a time; stale locks expire after one hour."""
+    lock_key = "task_lock::refresh_live_match_data"
+    try:
+        acquired = cache.add(lock_key, True, timeout=60 * 60)
+    except Exception:
+        logger.exception("Could not acquire live refresh lock; continuing without lock")
+        acquired = False
+    if not acquired:
+        # Distinguish a cache outage from another active run: the cache.add
+        # failure path above also reaches here, but the task should still work.
+        try:
+            if cache.get(lock_key):
+                logger.info("Skipping live refresh because a previous run is still active")
+                return {"status": "skipped", "reason": "already_running"}
+        except Exception:
+            pass
+        acquired = True
+    try:
+        return _refresh_live_match_data_impl()
+    finally:
+        if acquired:
+            try:
+                cache.delete(lock_key)
+            except Exception:
+                logger.warning("Could not release live refresh lock")
+
+
+def _refresh_live_match_data_impl():
+    """Refresh statuses, unfinished predictions and daily top-pick markets."""
     from .views import refresh_prediction_statuses
 
     from datetime import timedelta
@@ -201,20 +227,49 @@ def refresh_live_match_data():
             continue
         status_updates += refresh_prediction_statuses(competition, match_date, force=True)
 
-    # Score each upcoming fixture once. Standard variants use the top four
-    # ranked markets; Mshipi can use all six. This avoids repeating model
-    # scoring four times during every live refresh.
-    rank_six_candidates = _collect_top_pick_candidates(rank_limit=6)
+    # Recalculate every unfinished prediction with the already-cached model.
+    # Settled matches are excluded here and protected again in save_predictions.
+    unfinished = MatchPrediction.objects.filter(
+        match_date__gte=today,
+        status__in=["TIMED", "LIVE"],
+    ).order_by("competition", "match_date")
+    grouped_unfinished = {}
+    for prediction in unfinished:
+        grouped_unfinished.setdefault(prediction.competition, []).append(prediction)
+
+    prediction_updates = 0
+    for competition, rows in grouped_unfinished.items():
+        bundle = get_or_train_model_bundle(competition)
+        if not bundle or len(bundle) != 3:
+            continue
+        matches = [{
+            "id": row.match_id,
+            "utcDate": row.match_date.isoformat(),
+            "status": row.status,
+            "homeTeam": {"name": row.home_team},
+            "awayTeam": {"name": row.away_team},
+        } for row in rows if row.match_id]
+        if matches:
+            updated_rows = save_predictions(
+                matches, bundle[0], bundle[1], bundle[2],
+                competition_code=competition,
+            )
+            prediction_updates += len(updated_rows)
+
+    # Score each upcoming fixture once. Standard variants use the top four;
+    # 12, GG, Over 2.5 and Mshipi can inspect the full ranked market list.
+    rank_all_candidates = _collect_top_pick_candidates(rank_limit=12)
     rank_four_candidates = {
         date_str: [candidate for candidate in candidates if candidate["rank_index"] < 4]
-        for date_str, candidates in rank_six_candidates.items()
+        for date_str, candidates in rank_all_candidates.items()
     }
 
     stored_top_picks = {}
-    for variant in ("1", "2", "3", "4"):
-        candidates = rank_six_candidates if variant == "4" else rank_four_candidates
+    for variant in ("1", "2", "3", "4", "5", "6", "7"):
+        candidates = rank_all_candidates if variant in {"4", "5", "6", "7"} else rank_four_candidates
+        limit = 20 if variant == "4" else (12 if variant in {"5", "6", "7"} else 10)
         top_predictions = get_top_predictions_for_variant(
-            limit=20 if variant == "4" else 10,
+            limit=limit,
             variant=variant,
             candidates_by_date=candidates,
         )
@@ -222,6 +277,8 @@ def refresh_live_match_data():
 
     return {
         "status_updates": status_updates,
+        "prediction_updates": prediction_updates,
+        "unfinished_fixtures_checked": sum(len(rows) for rows in grouped_unfinished.values()),
         "stored_top_picks": stored_top_picks,
         "dates_checked": [str(entry["match_date"]) for entry in refresh_pairs],
     }
