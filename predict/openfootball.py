@@ -148,7 +148,7 @@ def parse_openfootball_text(content, competition_code, season_year):
             away_goals = int(score_match.group("away_goals"))
         else:
             away = re.sub(
-                r"\\s*(?:\\[(?:postponed|cancelled|abandoned)\\]|\\((?:postponed|cancelled|abandoned)\\)|(?:postponed|cancelled|abandoned))\\s*$",
+                r"\s*(?:\[(?:postponed|cancelled|abandoned)\]|\((?:postponed|cancelled|abandoned)\)|(?:postponed|cancelled|abandoned))\s*$",
                 "",
                 tail,
                 flags=re.IGNORECASE,
