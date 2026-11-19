@@ -216,7 +216,7 @@ def fetch_upcoming_fixture_groups(api_key, competition_code, days_ahead=45):
                 merged = fetch_fixture_matches_by_date(api_key, competition_code, match_day)
                 if merged:
                     grouped[match_day] = merged
-            if grouped or bulk_provider == "OF":
+            if grouped:
                 return grouped
     except Exception as exc:
         if bulk_provider:
