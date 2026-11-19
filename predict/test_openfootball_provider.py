@@ -34,6 +34,7 @@ class OpenFootballAfricaParserTests(TestCase):
 """
         matches = parse_openfootball_text(source, "KEN", 2025)
         self.assertEqual(matches[0]["status"], "POSTPONED")
+        self.assertEqual(matches[0]["awayTeam"]["name"], "Away FC")
         self.assertIsNone(matches[0]["score"]["fullTime"]["home"])
 
     def test_african_competitions_are_routed_to_openfootball(self):
