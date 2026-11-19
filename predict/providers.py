@@ -12,6 +12,7 @@ Routing is decided per competition by COMPETITION_PROVIDERS in constants.py.
 If APIFOOTBALL_KEY is not set, all AF calls return empty gracefully — so adding
 AF leagues to the config is harmless until the key is configured.
 """
+import hashlib
 import logging
 import os
 
@@ -848,18 +849,31 @@ def _om_row_to_match(row, competition_code, season_code, kind):
     if not home or not away or not match_day:
         return None
 
+    # Keep the published UTC calendar date intact. The feed's kickoff clock
+    # uses a fixed UTC+01:00 convention; when it is absent, do not invent noon.
     kickoff = (row.get("time") or "").strip()
-    if kickoff and ":" in kickoff:
-        # The feed documents a fixed CET-1 convention (UTC+01:00).
-        utc_date = f"{match_day}T{kickoff[:5]}:00+01:00"
+    if kickoff:
+        try:
+            from datetime import datetime as _datetime
+            parsed_kickoff = _datetime.strptime(kickoff[:5], "%H:%M")
+            utc_date = f"{match_day}T{parsed_kickoff:%H:%M}:00+01:00"
+        except ValueError:
+            utc_date = match_day
     else:
-        utc_date = f"{match_day}T12:00:00Z"
+        utc_date = match_day
 
     home_goals = _om_int(row.get("ft_home")) if kind == "results" else None
     away_goals = _om_int(row.get("ft_away")) if kind == "results" else None
     finished = home_goals is not None and away_goals is not None
+    # MatchPrediction.match_id is varchar(50). Hash the source identity rather
+    # than storing unbounded team names in that unique database column.
+    identity = "|".join((
+        str(competition_code), str(season_code), match_day,
+        home.casefold(), away.casefold(),
+    ))
+    stable_id = hashlib.sha1(identity.encode("utf-8")).hexdigest()[:16]
     return {
-        "id": f"OM-{competition_code}-{season_code}-{match_day}-{home}-{away}",
+        "id": f"OM-{competition_code}-{stable_id}",
         "utcDate": utc_date,
         "status": "FINISHED" if finished else "TIMED",
         "homeTeam": {"name": home, "crest": None},
