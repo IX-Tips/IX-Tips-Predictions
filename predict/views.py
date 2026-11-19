@@ -28,6 +28,7 @@ from celery import current_app
 from django_celery_beat.models import PeriodicTask
 
 from .models import ComboSlip, ComboSlipLeg, MatchOdds, MatchPrediction, TopPick, SlipBatch
+from .cache_keys import CacheKeys
 from .forms import ActualResultForm, PredictionForm, LivePredictionForm
 from .constants import (API_TOKEN, COMPETITIONS, ODDS_API_KEY as SETTINGS_ODDS_API_KEY, country_flag_url, get_team_metadata, get_football_team_logo_url, get_football_competition_logo_url)
 from .utils import (
