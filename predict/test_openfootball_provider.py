@@ -27,6 +27,22 @@ class OpenFootballAfricaParserTests(TestCase):
         self.assertEqual(matches[2]["status"], "TIMED")
         self.assertIsNone(matches[2]["score"]["fullTime"]["home"])
 
+
+    def test_strips_kickoff_times_from_home_team_names(self):
+        source = """
+  Sat Sep 20 2025
+      20:00  Tala'ea El Gaish SC     v Al Masry Club            0-2
+      17:30  Marumo Gallants         v Kaizer Chiefs            1-2
+             Marumo Gallants         v AmaZulu FC               1-0
+"""
+        matches = parse_openfootball_text(source, "EGY", 2025)
+
+        self.assertEqual(matches[0]["homeTeam"]["name"], "Tala'ea El Gaish SC")
+        self.assertEqual(matches[0]["awayTeam"]["name"], "Al Masry Club")
+        self.assertEqual(matches[1]["homeTeam"]["name"], "Marumo Gallants")
+        self.assertEqual(matches[1]["awayTeam"]["name"], "Kaizer Chiefs")
+        self.assertEqual(matches[2]["homeTeam"]["name"], "Marumo Gallants")
+
     def test_postponed_matches_are_not_marked_finished(self):
         source = """
   Sat Sep 20 2025
