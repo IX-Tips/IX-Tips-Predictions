@@ -199,7 +199,7 @@ def competition_odds_refresh_cache_key(competition_code):
 
 
 def fixture_meta_cache_key(competition_code, match_date, home_team, away_team):
-    return f"fixture_meta::{competition_code}::{match_date}::{home_team}::{away_team}"
+    return CacheKeys.fixture_meta(competition_code, match_date, home_team, away_team)
 
 
 def format_kickoff_time(utc_date):
