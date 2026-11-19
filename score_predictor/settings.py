@@ -96,9 +96,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "predict.middleware.RequestPerformanceMiddleware",  # opt-in request/SQL timing
     "whitenoise.middleware.WhiteNoiseMiddleware",   # static files in production
     "django.middleware.cache.UpdateCacheMiddleware",  # page cache (must be first after security)
+    "predict.middleware.RequestPerformanceMiddleware",  # opt-in request/SQL timing
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
