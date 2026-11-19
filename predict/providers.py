@@ -29,6 +29,7 @@ from .constants import (
     FOOTBALL_DATA_UK_CODES,
     LIVEFOOTBALL_LEAGUE_IDS,
     OPEN_MATCHDAY_COMPETITIONS,
+    OPENFOOTBALL_COMPETITIONS,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,7 @@ OM_ENABLED = os.environ.get("OPEN_MATCHDAY_ENABLED", "true").strip().lower() in 
 }
 OM_CACHE_TIMEOUT = 60 * 60 * 8
 OM_FIXTURE_CACHE_TIMEOUT = 60 * 60 * 4
+OF_ENABLED = os.environ.get("OPENFOOTBALL_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 # API-Football fixture status short codes -> football-data status strings
 _AF_FINISHED = {"FT", "AET", "PEN", "AWD", "WO"}
@@ -76,6 +78,10 @@ def is_uk(competition_code):
     return get_provider(competition_code) == "UK"
 
 
+def is_of(competition_code):
+    return get_provider(competition_code) == "OF"
+
+
 def is_fd(competition_code):
     return get_provider(competition_code) == "FD"
 
@@ -91,6 +97,7 @@ _PROVIDER_DISPATCH = {
     "LF": {},
     "UK": {},
     "OM": {},
+    "OF": {},
 }
 
 
@@ -787,6 +794,10 @@ def supports_open_matchday(competition_code):
     return OM_ENABLED and competition_code in OPEN_MATCHDAY_COMPETITIONS
 
 
+def supports_openfootball(competition_code):
+    return OF_ENABLED and competition_code in OPENFOOTBALL_COMPETITIONS
+
+
 def _om_season_code(season_year):
     """Return the current published season code (e.g. 2026 -> '2627')."""
     from datetime import date
@@ -953,6 +964,41 @@ def om_fetch_matches_by_season(competition_code, season_year):
         match for match in _om_current_matches(competition_code)
         if match.get("status") == "FINISHED"
     ]
+
+
+# ══ OpenFootball (OF) — CC0 public-domain African match files ════════════════
+@_register(providers=["OF"], operation="fetch_matches_by_date")
+def of_fetch_matches_by_date(competition_code, match_date):
+    from .openfootball import fetch_matches_by_date
+    return fetch_matches_by_date(competition_code, match_date)
+
+
+@_register(providers=["OF"], operation="fetch_matches_by_season")
+def of_fetch_matches_by_season(competition_code, season_year):
+    from .openfootball import fetch_matches_by_season
+    return fetch_matches_by_season(competition_code, season_year)
+
+
+@_register(providers=["OF"], operation="fetch_standings")
+def of_fetch_standings(competition_code):
+    from .openfootball import fetch_standings
+    return fetch_standings(competition_code)
+
+
+@_register(providers=["OF"], operation="fetch_teams")
+def of_fetch_teams(competition_code):
+    from .openfootball import fetch_teams
+    return None, fetch_teams(competition_code)
+
+
+@_register(providers=["OF"], operation="fetch_scorers")
+def of_fetch_scorers(competition_code):
+    return []
+
+
+def of_current_matches(competition_code):
+    from .openfootball import current_matches
+    return current_matches(competition_code)
 
 
 # ══ FD provider — thin wrappers around football-data.org's REST API ══════════
