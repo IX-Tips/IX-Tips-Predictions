@@ -440,7 +440,9 @@ FOOTBALL_COMPETITION_LOGO_SLUGS = {
 def _normalize_football_logo_name(name):
     value = unicodedata.normalize("NFKD", str(name or ""))
     value = value.encode("ascii", "ignore").decode("ascii").lower()
-    value = re.sub(r"\b(?:football club|soccer club|fc|cf|club)\b", " ", value)
+    # Provider feeds and logo catalogues often disagree on common club suffixes.
+    # Strip only generic abbreviations; ambiguous global matches remain rejected.
+    value = re.sub(r"\b(?:football club|soccer club|fc|cf|afc|sc|club)\b", " ", value)
     return re.sub(r"[^a-z0-9]+", " ", value).strip()
 
 
