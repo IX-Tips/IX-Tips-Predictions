@@ -130,7 +130,7 @@ def cache_training_data():
         df = fetch_training_data_all_seasons(comp)
         if df is not None and not df.empty:
             # fetch_training_data_all_seasons owns cache writes and applies the
-            # shorter OM-specific TTL. Do not overwrite it with seven days.
+            # provider-specific daily TTL. Do not overwrite it with seven days.
             if supports_open_matchday(comp) or supports_openfootball(comp):
                 _MODEL_REGISTRY.pop(comp, None)
                 try:
