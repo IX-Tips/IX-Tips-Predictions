@@ -426,7 +426,7 @@ def _football_logo_indexes():
             key = _normalize_football_logo_name(item.get("name"))
             if not key or not item.get("slug") or not item.get("hash"):
                 continue
-            country_index[key] = item
+            country_index.setdefault(key, []).append(item)
             globally.setdefault(key, []).append((country_slug, item))
         by_country[country_slug] = country_index
     return by_country, globally
@@ -449,9 +449,11 @@ def get_football_team_logo_url(team_name, competition_code=None):
     by_country, globally = _football_logo_indexes()
     country_slug = FOOTBALL_LOGO_COUNTRY_BY_COMPETITION.get(competition_code)
     if country_slug and country_slug != "tournaments":
-        match = by_country.get(country_slug, {}).get(key)
-        if match:
-            return _football_logo_url(country_slug, match)
+        country_matches = by_country.get(country_slug, {}).get(key, [])
+        if len(country_matches) == 1:
+            return _football_logo_url(country_slug, country_matches[0])
+        if len(country_matches) > 1:
+            return None
 
     # International cups and unknown competition codes: only use a global
     # result when the normalized team name is unambiguous across countries.
