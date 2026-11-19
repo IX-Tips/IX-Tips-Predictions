@@ -23,7 +23,7 @@ TTL = type("TTL", (), {
     "ODDS":               60 * 10,             # 10 minutes — odds change rapidly pre-match
     "LIVE_MATCH_CACHE":   60 * 60 * 6,         # 6 hours — kickoff times, status
     "NAME_NORMALIZATION": 300,                 # 5 minutes
-}, frozen=True)
+})
 
 
 class CacheKeys:
