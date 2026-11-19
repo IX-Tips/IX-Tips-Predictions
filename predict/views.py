@@ -3288,8 +3288,7 @@ def export_top_picks(request, format):
         def competition_logo_path(competition_code):
             if not competition_code:
                 return None
-            logo_path = os.path.join(settings.BASE_DIR, "static", "logos", f"{competition_code}.png")
-            return logo_path if os.path.exists(logo_path) else None
+            return resolve_competition_logo(competition_code)
 
         def load_team_logo(logo_source):
             if not logo_source:
