@@ -137,6 +137,9 @@ def parse_openfootball_text(content, competition_code, season_year):
             continue
 
         home = match_line.group("home").strip()
+        # Football.TXT may prefix the home team with a kickoff time.
+        # It is metadata, not part of the team name.
+        home = re.sub(r"^\d{1,2}:\d{2}\s+", "", home).strip()
         tail = match_line.group("tail").strip()
         if not home or not tail:
             continue
