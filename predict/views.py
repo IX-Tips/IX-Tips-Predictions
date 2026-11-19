@@ -29,7 +29,7 @@ from django_celery_beat.models import PeriodicTask
 
 from .models import ComboSlip, ComboSlipLeg, MatchOdds, MatchPrediction, TopPick, SlipBatch
 from .forms import ActualResultForm, PredictionForm, LivePredictionForm
-from .constants import API_TOKEN, COMPETITIONS, ODDS_API_KEY as SETTINGS_ODDS_API_KEY, country_flag_url, get_team_metadata
+from .constants import (API_TOKEN, COMPETITIONS, ODDS_API_KEY as SETTINGS_ODDS_API_KEY, country_flag_url, get_team_metadata, get_football_team_logo_url, get_football_competition_logo_url)
 from .utils import (
     _market_odds_value,
     explain_pick_reasons,
@@ -69,6 +69,16 @@ BASE_URL = "https://api.football-data.org/v4"
 ODDS_API_KEY = getattr(settings, "ODDS_API_KEY", SETTINGS_ODDS_API_KEY)
 ODDS_API_BASE = "https://api.the-odds-api.com/v4/sports/{sport}/odds"
 competitions = COMPETITIONS
+
+
+def resolve_competition_logo(competition_code):
+    """Prefer repository assets, then the verified external catalog, then a flag."""
+    local_path = os.path.join(settings.BASE_DIR, "static", "logos", f"{competition_code}.png")
+    if os.path.exists(local_path):
+        return static(f"logos/{competition_code}.png")
+    return get_football_competition_logo_url(competition_code) or country_flag_url(competition_code)
+
+
 # Map competition codes to The Odds API sport keys (extend as needed)
 COMPETITION_SPORT_MAP = {
     "PL": "soccer_epl",
@@ -851,9 +861,7 @@ def top_picks_view(request):
         enriched_pick["away_initials"] = team_initials(away_name)
         enriched_pick["competition"] = competition_name
         enriched_pick["competition_code"] = competition_code
-        enriched_pick["competition_logo"] = (
-            static(f"logos/{competition_code}.png") if os.path.exists(os.path.join(settings.BASE_DIR, "static", "logos", f"{competition_code}.png")) else country_flag_url(competition_code)
-        )
+        enriched_pick["competition_logo"] = resolve_competition_logo(competition_code)
         enriched_pick["odds"] = odds_value
         enriched_pick["implied_probability"] = None
         enriched_pick["edge"] = None
@@ -1245,7 +1253,7 @@ def build_market_pick_rows(group_key=None, market_name=None, scope_key=None, sor
                 competitions.get(prediction.competition, prediction.competition),
                 code=prediction.competition,
             ),
-            "competition_logo": static(f"logos/{prediction.competition}.png") if os.path.exists(os.path.join(settings.BASE_DIR, "static", "logos", f"{prediction.competition}.png")) else country_flag_url(prediction.competition),
+            "competition_logo": resolve_competition_logo(prediction.competition),
             "home_team": normalize_display_team_name(meta_home.get("shortName"), fallback=prediction.home_team, max_length=24),
             "away_team": normalize_display_team_name(meta_away.get("shortName"), fallback=prediction.away_team, max_length=24),
             "home_logo": meta_home.get("crest"),
@@ -1823,24 +1831,7 @@ def safe_logo_name(team_name):
 
 
 def competition_logo(code):
-    return static(f"logos/{code}.png")
-
-
-TEAM_LOGO_DIR = os.path.join("static", "logos")
-TEAM_LOGO_FILES = [f for f in os.listdir(TEAM_LOGO_DIR) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-
-
-def fuzzy_match_logo(team_name):
-    normalized_team = team_name.lower().replace("fc", "").replace(".", "").strip()
-    name_map = {}
-    for file in TEAM_LOGO_FILES:
-        file_base = file.lower().replace("fc", "").replace(".", "").replace(".png", "").replace(".jpg", "").replace(".jpeg", "").strip()
-        name_map[file_base] = file
-    close_matches = difflib.get_close_matches(normalized_team, name_map.keys(), n=1, cutoff=0.6)
-    if close_matches:
-        matched_base = close_matches[0]
-        return name_map[matched_base]
-    return "default.png"
+    return resolve_competition_logo(code)
 
 
 def normalize_display_team_name(name, fallback=None, max_length=14):
@@ -2072,7 +2063,7 @@ def build_match_detail_context(prediction, source=None):
             competitions.get(prediction.competition, prediction.competition),
             code=prediction.competition,
         ),
-        "competition_logo": static(f"logos/{prediction.competition}.png") if prediction.competition in competitions else None,
+        "competition_logo": resolve_competition_logo(prediction.competition),
         "home_team": home_name,
         "away_team": away_name,
         "home_logo": meta_home.get("crest"),
@@ -2765,7 +2756,7 @@ def predictions_view(request):
         )
 
         comp_code = p.competition if p.competition in competitions else NAME_TO_CODE.get(p.competition.lower().strip(), "default")
-        competition_logo_path = static(f"logos/{comp_code}.png") if os.path.exists(os.path.join(settings.BASE_DIR, "static", "logos", f"{comp_code}.png")) else country_flag_url(comp_code)
+        competition_logo_path = resolve_competition_logo(comp_code)
 
         actual_result = "-:-"
         actual_winner = None
@@ -3050,7 +3041,7 @@ def build_anytime_scorer_rows(match_date_str=None):
                 competitions.get(competition_code, competition_code),
                 code=competition_code,
             ),
-            "competition_logo": static(f"logos/{competition_code}.png") if competition_code in competitions else None,
+            "competition_logo": resolve_competition_logo(competition_code) if competition_code in competitions else None,
             "home_team": normalize_display_team_name(meta_home.get("shortName"), fallback=prediction.home_team),
             "away_team": normalize_display_team_name(meta_away.get("shortName"), fallback=prediction.away_team),
             "home_logo": meta_home.get("crest"),
@@ -3150,7 +3141,7 @@ def team_logos_preview(request):
         preview_data.append({
             "competition": comp_name,
             "competition_code": comp_code,
-            "logo": static(f"logos/{comp_code}.png"),
+            "logo": resolve_competition_logo(comp_code),
             "teams": []
         })
 
@@ -3159,14 +3150,8 @@ def team_logos_preview(request):
     })
 
 
-def match_team_logo(team_name):
-    simplified_team_names = [f.lower().replace('.png', '').replace('.jpg', '').replace('.jpeg', '') for f in TEAM_LOGO_FILES]
-    match = difflib.get_close_matches(team_name.lower(), simplified_team_names, n=1, cutoff=0.6)
-    if match:
-        for f in TEAM_LOGO_FILES:
-            if match[0] in f.lower():
-                return f
-    return "default.png"
+def match_team_logo(team_name, competition_code=None):
+    return get_football_team_logo_url(team_name, competition_code) or static("logos/default.png")
 
 
 def flatten_competitions(comp_dict):
@@ -3177,7 +3162,7 @@ def league_table_view(request, competition_code):
     table = get_league_table(competition_code)
     for team in table:
         team_name = team["team"]["name"]
-        team["team"]["logo"] = match_team_logo(team_name)
+        team["team"]["logo"] = match_team_logo(team_name, competition_code)
 
     competition_name = flatten_competitions(COMPETITIONS).get(competition_code, competition_code)
 
