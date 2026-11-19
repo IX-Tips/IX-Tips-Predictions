@@ -11,9 +11,11 @@ Usage:
     cache.set(CacheKeys.team_meta("Arsenal"), {...}, timeout=CacheKeys.TTL_TEAM_META)
 """
 
+import hashlib
+
 def _hashed_cache_key(namespace, *parts):
     """Return a short, deterministic cache key safe for every Django backend."""
-    payload = "\\x1f".join(str(part) for part in parts)
+    payload = "\x1f".join(str(part) for part in parts)
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
     return f"{namespace}:v1:{digest}"
 
