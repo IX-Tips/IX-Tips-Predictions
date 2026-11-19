@@ -104,12 +104,11 @@ class OpenMatchdayTrainingMergeTests(TestCase):
             match["odds"] = odds
         return match
 
-    @patch("predict.utils.supports_open_matchday", create=True, return_value=True)
     @patch("predict.providers.supports_open_matchday", return_value=True)
     @patch("predict.providers.om_fetch_matches_by_season")
     @patch("predict.utils.fetch_matches_by_season")
     def test_training_merges_om_rows_and_keeps_primary_odds(
-        self, primary_fetch, om_fetch, provider_support, utils_support
+        self, primary_fetch, om_fetch, provider_support
     ):
         primary_fetch.return_value = [
             self._finished("uk-1", "Alpha FC", "Beta", "2026-11-01", 2, 0,
