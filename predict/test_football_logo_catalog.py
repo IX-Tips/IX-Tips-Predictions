@@ -44,7 +44,7 @@ class FootballLogoCatalogTests(SimpleTestCase):
         self.assertEqual(metadata["crest"], "https://flagcdn.com/w160/tr.png")
 
     def test_ambiguous_global_team_name_is_not_guessed(self):
-        self.assertIsNone(get_football_team_logo_url("Wimbledon", "CL"))
+        self.assertIsNone(get_football_team_logo_url("Atlas", "CL"))
 
     def test_ambiguous_same_country_team_name_is_not_guessed(self):
-        self.assertIsNone(get_football_team_logo_url("Amiens SC", "FRA2"))
+        self.assertIsNone(get_football_team_logo_url("Racing", "ARG"))
