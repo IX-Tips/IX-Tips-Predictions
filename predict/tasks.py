@@ -60,8 +60,8 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
 
     df = cache.get(f"training_data_{competition_code}")
     if df is None:
-        # fetch_training_data_all_seasons owns the provider-specific cache TTL.
-        df = fetch_training_data_all_seasons(competition_code)
+        # fetch_training_data_all_seasons owns cache writes and applies the
+            # provider-specific daily TTL. Do not overwrite it with seven days.
 
     training_entries = len(df) if df is not None else 0
     if df is None or df.empty:
