@@ -4,6 +4,7 @@ from django.test import SimpleTestCase
 
 from predict.constants import (
     get_football_competition_logo_url,
+    FOOTBALL_COMPETITION_LOGO_SLUGS,
     get_football_team_logo_url,
     get_team_metadata,
 )
@@ -19,6 +20,11 @@ class FootballLogoCatalogTests(SimpleTestCase):
         url = get_football_competition_logo_url("PL")
         self.assertTrue(url.startswith("https://assets.football-logos.cc/logos/england/256x256/english-premier-league."))
         self.assertTrue(url.endswith(".png"))
+
+    def test_every_configured_competition_has_a_catalog_logo(self):
+        for competition_code in FOOTBALL_COMPETITION_LOGO_SLUGS:
+            with self.subTest(competition_code=competition_code):
+                self.assertIsNotNone(get_football_competition_logo_url(competition_code))
 
     def test_preserves_provider_crest_before_catalog_fallback(self):
         provider_crest = "https://provider.example/crest.png"
