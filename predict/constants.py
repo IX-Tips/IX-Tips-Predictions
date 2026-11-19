@@ -1,5 +1,8 @@
 import os
 import json
+import re
+import unicodedata
+from functools import lru_cache
 
 from django.core.cache import cache
 from django.conf import settings
@@ -296,13 +299,209 @@ def model_cache_key(comp_code):
     return f"model_bundle::{comp_code}"
 
 
+# Country catalog used to resolve missing team crests without making a
+# network request for every fixture. Image files remain hosted by football-logos.cc.
+FOOTBALL_LOGO_COUNTRY_BY_COMPETITION = {
+    "PL": "england", "ELC": "england", "ENG2": "england", "ENG3": "england",
+    "ENG5": "england", "ENG6N": "england", "ENG6S": "england", "ENG7": "england",
+    "EFLCUP": "england", "FACUP": "england",
+    "PD": "spain", "ESP2": "spain", "COPAREY": "spain",
+    "SA": "italy", "ITA2": "italy", "COPPA": "italy",
+    "BL1": "germany", "GER2": "germany", "GER3": "germany", "DFB": "germany",
+    "FL1": "france", "FRA2": "france",
+    "DED": "netherlands", "NED2": "netherlands", "KNVB": "netherlands",
+    "PPL": "portugal", "TACAP": "portugal",
+    "AUT": "austria", "OFBCUP": "austria",
+    "SWZ": "switzerland", "SWZCUP": "switzerland",
+    "SCO": "scotland", "SCO2": "scotland", "SCO3": "scotland",
+    "SCO4": "scotland", "SCOTCUP": "scotland", "SCOTLC": "scotland",
+    "BEL": "belgium", "BELU21": "belgium", "TUR": "turkey", "GRE": "greece",
+    "DEN": "denmark", "SWE": "sweden", "NOR": "norway", "ROU": "romania",
+    "RUS": "russia", "IRE1": "republic-of-ireland", "IRENAT": "republic-of-ireland",
+    "POL": "poland", "POL1": "poland", "POL2": "poland",
+    "WAL1": "wales", "WAL2": "wales", "WAL3": "wales",
+    "CRO": "croatia", "CZE": "czech-republic", "UKR": "ukraine",
+    "CYP": "cyprus", "SVK": "slovakia", "SVN": "slovenia", "FIN": "finland",
+    "KAZ": "kazakhstan", "BSA": "brazil", "BRA2": "brazil",
+    "ARG": "argentina", "ARG2": "argentina", "MEX": "mexico", "MEX2": "mexico",
+    "USA": "usa", "JPN": "japan", "AUS": "australia", "CHN": "china",
+    "SAU": "saudi-arabia",
+    # Continental competitions contain clubs from many countries.
+    "CL": "tournaments", "UEL": "tournaments", "UECL": "tournaments",
+    "CLI": "tournaments",
+}
+
+FOOTBALL_COMPETITION_LOGO_SLUGS = {
+    "PL": ("england", "english-premier-league"),
+    "PD": ("spain", "la-liga"),
+    "SA": ("italy", "serie-a"),
+    "BL1": ("germany", "bundesliga"),
+    "FL1": ("france", "ligue-1"),
+    "DED": ("netherlands", "eredivisie"),
+    "PPL": ("portugal", "primeira-liga"),
+    "ELC": ("england", "efl-championship"),
+    "CL": ("tournaments", "uefa-champions-league"),
+    "BSA": ("brazil", "brazilian-serie-a"),
+    "CLI": ("tournaments", "conmebol-libertadores"),
+    "SAU": ("saudi-arabia", "saudi-professional-league"),
+    "BEL": ("belgium", "jupiler-pro-league"),
+    "TUR": ("turkey", "super-lig"),
+    "GRE": ("greece", "super-league-1"),
+    "SCO": ("scotland", "scottish-premiership"),
+    "GER2": ("germany", "2-bundesliga"),
+    "ITA2": ("italy", "serie-b"),
+    "ESP2": ("spain", "la-liga-2"),
+    "FRA2": ("france", "ligue-2"),
+    "JPN": ("japan", "j-league"),
+    "CHN": ("china", "chinese-super-league"),
+    "RUS": ("russia", "russian-premier-league"),
+    "ENG2": ("england", "efl-league-one"),
+    "ENG3": ("england", "efl-league-two"),
+    "SCO2": ("scotland", "scottish-championship"),
+    "SCO3": ("scotland", "scottish-league-one"),
+    "SCO4": ("scotland", "scottish-league-two"),
+    "ARG": ("argentina", "argentina-primera-division"),
+    "AUT": ("austria", "austrian-football-bundesliga"),
+    "FIN": ("finland", "veikkausliiga"),
+    "MEX": ("mexico", "liga-mx"),
+    "NOR": ("norway", "eliteserien"),
+    "POL": ("poland", "ekstraklasa"),
+    "ROU": ("romania", "superliga"),
+    "SWE": ("sweden", "allsvenskan"),
+    "SWZ": ("switzerland", "swiss-football-league"),
+    "USA": ("usa", "mls"),
+    "EFLCUP": ("england", "efl-cup"),
+    "FACUP": ("england", "emirates-fa-cup"),
+    "DFB": ("germany", "dfb-pokal"),
+    "KNVB": ("netherlands", "knvb-cup"),
+    "ENG5": ("england", "national-league"),
+    "ENG6N": ("england", "national-league-north"),
+    "ENG6S": ("england", "national-league-south"),
+    "ENG7": ("england", "northern-premier-league"),
+    "GER3": ("germany", "3-liga"),
+    "DEN": ("denmark", "danish-super-liga"),
+    "IRE1": ("republic-of-ireland", "league-of-ireland-first-division"),
+    "POL1": ("poland", "1-liga"),
+    "WAL1": ("wales", "cymru-premier"),
+    "WAL2": ("wales", "cymru-north"),
+    "WAL3": ("wales", "cymru-south"),
+    "CRO": ("croatia", "croatian-football-league"),
+    "CZE": ("czech-republic", "chance-liga"),
+    "UKR": ("ukraine", "ukrainian-premier-league"),
+    "CYP": ("cyprus", "cypriot-first-division"),
+    "SVK": ("slovakia", "slovak-first-football-league"),
+    "SVN": ("slovenia", "slovenian-prvaliga"),
+    "KAZ": ("kazakhstan", "kazakhstan-premier-league"),
+    "NED2": ("netherlands", "eerste-divisie"),
+    "BRA2": ("brazil", "brazilian-serie-b"),
+    "ARG2": ("argentina", "primera-nacional"),
+    "MEX2": ("mexico", "liga-de-expansion-mx"),
+    "AUS": ("australia", "a-league"),
+    "UEL": ("tournaments", "uefa-europa-league"),
+    "UECL": ("tournaments", "uefa-conference-league"),
+}
+
+
+def _normalize_football_logo_name(name):
+    value = unicodedata.normalize("NFKD", str(name or ""))
+    value = value.encode("ascii", "ignore").decode("ascii").lower()
+    value = re.sub(r"\b(?:football club|soccer club|fc|cf|club)\b", " ", value)
+    return re.sub(r"[^a-z0-9]+", " ", value).strip()
+
+
+@lru_cache(maxsize=1)
+def _football_logo_indexes():
+    catalog_path = os.path.join(os.path.dirname(__file__), "data", "football_logos.json")
+    try:
+        with open(catalog_path, encoding="utf-8") as catalog_file:
+            catalog = json.load(catalog_file)
+    except (OSError, ValueError):
+        return {}, {}
+
+    by_country = {}
+    globally = {}
+    for country_slug, country in catalog.get("countries", {}).items():
+        country_index = {}
+        for item in country.get("clubs", []):
+            key = _normalize_football_logo_name(item.get("name"))
+            if not key or not item.get("slug") or not item.get("hash"):
+                continue
+            country_index.setdefault(key, []).append(item)
+            globally.setdefault(key, []).append((country_slug, item))
+        by_country[country_slug] = country_index
+    return by_country, globally
+
+
+def _football_logo_url(country_slug, item):
+    if not country_slug or not item:
+        return None
+    return (
+        "https://assets.football-logos.cc/logos/"
+        f"{country_slug}/256x256/{item['slug']}.{item['hash']}.png"
+    )
+
+
+def get_football_team_logo_url(team_name, competition_code=None):
+    key = _normalize_football_logo_name(team_name)
+    if not key:
+        return None
+
+    by_country, globally = _football_logo_indexes()
+    country_slug = FOOTBALL_LOGO_COUNTRY_BY_COMPETITION.get(competition_code)
+    if country_slug and country_slug != "tournaments":
+        country_matches = by_country.get(country_slug, {}).get(key, [])
+        if len(country_matches) == 1:
+            return _football_logo_url(country_slug, country_matches[0])
+        if len(country_matches) > 1:
+            return None
+
+    # International cups and unknown competition codes: only use a global
+    # result when the normalized team name is unambiguous across countries.
+    matches = globally.get(key, [])
+    if len(matches) == 1:
+        return _football_logo_url(*matches[0])
+    return None
+
+
+@lru_cache(maxsize=1)
+def _football_competition_logo_index():
+    catalog_path = os.path.join(os.path.dirname(__file__), "data", "football_logos.json")
+    try:
+        with open(catalog_path, encoding="utf-8") as catalog_file:
+            catalog = json.load(catalog_file)
+    except (OSError, ValueError):
+        return {}
+    return {
+        country_slug: {
+            item.get("slug"): item
+            for item in country.get("leagues", [])
+            if item.get("slug") and item.get("hash")
+        }
+        for country_slug, country in catalog.get("countries", {}).items()
+    }
+
+
+def get_football_competition_logo_url(competition_code):
+    location = FOOTBALL_COMPETITION_LOGO_SLUGS.get(competition_code)
+    if not location:
+        return None
+    country_slug, target_slug = location
+    item = _football_competition_logo_index().get(country_slug, {}).get(target_slug)
+    return _football_logo_url(country_slug, item) if item else None
+
+
 def get_team_metadata(name, competition_code=None):
     meta = cache.get(team_meta_cache_key(name), {"shortName": name, "crest": None})
-    # UK/OM fixture feeds do not include team crests. Use the league country
-    # flag when no actual team badge is available.
+    if meta.get("crest"):
+        return meta
+
     fallback_competition = competition_code or meta.get("competition")
-    if not meta.get("crest") and fallback_competition:
-        flag = country_flag_url(fallback_competition)
-        if flag:
-            meta = {**meta, "crest": flag}
+    team_logo = get_football_team_logo_url(name, fallback_competition)
+    if team_logo:
+        return {**meta, "crest": team_logo, "logo_source": "football-logos.cc"}
+
+    # If no verified club logo matches, use the competition country flag.
+    flag = country_flag_url(fallback_competition) if fallback_competition else None
+    if flag:
+        return {**meta, "crest": flag}
     return meta
