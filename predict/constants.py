@@ -81,7 +81,14 @@ COMPETITIONS = {
     "SVK": "Slovak Nike Liga", "SVN": "Slovenian Prva Liga", "KAZ": "Kazakhstan Premier League",
     "NED2": "Eerste Divisie", "BRA2": "Brasileirão Série B",
     "ARG2": "Primera Nacional", "MEX2": "Liga de Expansión MX", "AUS": "A-Leagues",
-    "UEL": "UEFA Europa League", "UECL": "UEFA Conference League"
+    "UEL": "UEFA Europa League", "UECL": "UEFA Conference League",
+    "ALG": "Algerian Ligue Professionnelle 1", "EGY": "Egyptian Premier League",
+    "GHA": "Ghana Premier League", "KEN": "FKF Premier League",
+    "MWI": "Malawi Super League", "MAR": "Botola Pro",
+    "NGA": "Nigeria Professional Football League", "RWA": "Rwanda Premier League",
+    "SEN": "Senegal Ligue 1", "ZAF": "South African Premiership",
+    "TZA": "Tanzania Premier League", "UGA": "Uganda Premier League",
+    "ZMB": "Zambia Super League", "ZWE": "Zimbabwe Premier Soccer League"
 }
 
 # Which provider serves each competition. Anything not listed defaults to "FD".
@@ -105,6 +112,9 @@ COMPETITION_PROVIDERS = {
     "CRO": "OM", "CZE": "OM", "UKR": "OM", "CYP": "OM", "SVK": "OM",
     "SVN": "OM", "NED2": "OM", "BRA2": "OM", "ARG2": "OM", "MEX2": "OM",
     "AUS": "OM", "UEL": "OM", "UECL": "OM", "KAZ": "OM",
+    "ALG": "OF", "EGY": "OF", "GHA": "OF", "KEN": "OF", "MWI": "OF", "MAR": "OF",
+    "NGA": "OF", "RWA": "OF", "SEN": "OF", "ZAF": "OF", "TZA": "OF",
+    "UGA": "OF", "ZMB": "OF", "ZWE": "OF",
 }
 
 # football-data.co.uk mapping: our code -> (kind, fduk_code).
@@ -213,6 +223,23 @@ OPEN_MATCHDAY_COMPETITIONS = {
     "CHN": "CHN_1_super-league",
 }
 
+OPENFOOTBALL_COMPETITIONS = {
+    "ALG": {"country": "algeria", "suffix": "dz1", "calendar_year": False},
+    "EGY": {"country": "egypt", "suffix": "eg1", "calendar_year": False},
+    "GHA": {"country": "ghana", "suffix": "gh1", "calendar_year": False},
+    "KEN": {"country": "kenya", "suffix": "ke1", "calendar_year": False},
+    "MWI": {"country": "malawi", "suffix": "mw1", "calendar_year": True},
+    "MAR": {"country": "morocco", "suffix": "ma1", "calendar_year": False},
+    "NGA": {"country": "nigeria", "suffix": "ng1", "calendar_year": False},
+    "RWA": {"country": "rwanda", "suffix": "rw1", "calendar_year": False},
+    "SEN": {"country": "senegal", "suffix": "sn1", "calendar_year": False},
+    "ZAF": {"country": "south-africa", "suffix": "za1", "calendar_year": False},
+    "TZA": {"country": "tanzania", "suffix": "tz1", "calendar_year": False},
+    "UGA": {"country": "uganda", "suffix": "ug1", "calendar_year": False},
+    "ZMB": {"country": "zambia", "suffix": "zm1", "calendar_year": False},
+    "ZWE": {"country": "zimbabwe", "suffix": "zw1", "calendar_year": True},
+}
+
 # API-Football numeric league IDs (verified against the account on 2026-05-27).
 # Optional API-Football league IDs can be supplied without a code change:
 # APIFOOTBALL_LEAGUE_IDS='{"BEL": 144, "TUR": 203}'
@@ -261,6 +288,9 @@ COMPETITION_COUNTRY = {
     "CRO": "hr", "CZE": "cz", "UKR": "ua", "CYP": "cy", "SVK": "sk",
     "SVN": "si", "KAZ": "kz", "NED2": "nl", "BRA2": "br", "ARG2": "ar",
     "MEX2": "mx", "AUS": "au", "UEL": "eu", "UECL": "eu",
+    "ALG": "dz", "EGY": "eg", "GHA": "gh", "KEN": "ke", "MWI": "mw",
+    "MAR": "ma", "NGA": "ng", "RWA": "rw", "SEN": "sn", "ZAF": "za",
+    "TZA": "tz", "UGA": "ug", "ZMB": "zm", "ZWE": "zw",
 }
 
 
@@ -276,6 +306,7 @@ TEAM_METADATA_CACHE_TIMEOUT = 60 * 60 * 24 * 30
 STANDINGS_CACHE_TIMEOUT = 60 * 60 * 6
 TRAINING_CACHE_TIMEOUT = 60 * 60 * 24 * 7
 OPEN_MATCHDAY_TRAINING_CACHE_TIMEOUT = 60 * 60 * 24  # daily public-feed refresh
+OPENFOOTBALL_TRAINING_CACHE_TIMEOUT = 60 * 60 * 24
 MODEL_CACHE_TIMEOUT = 60 * 60 * 6
 
 
@@ -326,6 +357,10 @@ FOOTBALL_LOGO_COUNTRY_BY_COMPETITION = {
     "ARG": "argentina", "ARG2": "argentina", "MEX": "mexico", "MEX2": "mexico",
     "USA": "usa", "JPN": "japan", "AUS": "australia", "CHN": "china",
     "SAU": "saudi-arabia",
+    "ALG": "algeria", "EGY": "egypt", "GHA": "ghana", "KEN": "kenya",
+    "MWI": "malawi", "MAR": "morocco", "NGA": "nigeria", "RWA": "rwanda",
+    "SEN": "senegal", "ZAF": "south-africa", "TZA": "tanzania",
+    "UGA": "uganda", "ZMB": "zambia", "ZWE": "zimbabwe",
     # Continental competitions contain clubs from many countries.
     "CL": "tournaments", "UEL": "tournaments", "UECL": "tournaments",
     "CLI": "tournaments",
