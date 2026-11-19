@@ -26,6 +26,7 @@ from .constants import (
     ODDS_API_KEY,
     TRAINING_CACHE_TIMEOUT,
     OPEN_MATCHDAY_TRAINING_CACHE_TIMEOUT,
+    OPENFOOTBALL_TRAINING_CACHE_TIMEOUT,
     get_team_metadata,
     model_cache_key,
     training_data_cache_key,
@@ -546,9 +547,9 @@ def fetch_competition_scorers(competition_code):
     if cached is not None:
         return cached
 
-    from .providers import dispatch_provider, is_af, is_lf, is_uk
+    from .providers import dispatch_provider, is_af, is_lf, is_uk, is_of
     # LF and UK don't have scorer data; AF has its own fetcher.
-    if is_lf(competition_code) or is_uk(competition_code):
+    if is_lf(competition_code) or is_uk(competition_code) or is_of(competition_code):
         scorers = []
     elif is_af(competition_code):
         from .providers import af_fetch_scorers
@@ -668,10 +669,12 @@ def fetch_training_data_all_seasons(competition_code, seasons=None):
             competition_code,
         )
         return pd.DataFrame(columns=["home_team", "away_team", "home_goals", "away_goals", "utc_date"])
-    from .providers import supports_open_matchday
+    from .providers import supports_open_matchday, supports_openfootball
     cache_timeout = (
         OPEN_MATCHDAY_TRAINING_CACHE_TIMEOUT
         if supports_open_matchday(competition_code)
+        else OPENFOOTBALL_TRAINING_CACHE_TIMEOUT
+        if supports_openfootball(competition_code)
         else TRAINING_CACHE_TIMEOUT
     )
     cache.set(cache_key, df, timeout=cache_timeout)
