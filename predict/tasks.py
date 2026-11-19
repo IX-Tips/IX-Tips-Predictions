@@ -115,23 +115,23 @@ def cache_training_data():
     logger.info("Starting training data caching")
     from django.core.cache import caches
     from .constants import model_cache_key
-    from .providers import supports_open_matchday
+    from .providers import supports_open_matchday, supports_openfootball
     from .utils import _MODEL_REGISTRY
 
     model_store = caches["model_cache"]
     for comp in COMPETITIONS:
         key = f"training_data_{comp}"
 
-        # OM is refreshed daily. Remove its older (possibly seven-day) cache
-        # entry before fetching so a new published results CSV is picked up.
-        if supports_open_matchday(comp):
+        # Public volunteer datasets can change between runs. Refresh OM and
+        # OpenFootball training rows daily so newly published scores reach models.
+        if supports_open_matchday(comp) or supports_openfootball(comp):
             cache.delete(key)
 
         df = fetch_training_data_all_seasons(comp)
         if df is not None and not df.empty:
             # fetch_training_data_all_seasons owns cache writes and applies the
             # shorter OM-specific TTL. Do not overwrite it with seven days.
-            if supports_open_matchday(comp):
+            if supports_open_matchday(comp) or supports_openfootball(comp):
                 _MODEL_REGISTRY.pop(comp, None)
                 try:
                     model_store.delete(model_cache_key(comp))
