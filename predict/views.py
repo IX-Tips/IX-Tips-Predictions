@@ -1263,11 +1263,7 @@ def build_anytime_scorer_rows(match_date_str=None):
     scorer_cache = {}
     rows = []
 
-    refresh_pairs = list(predictions.values_list("competition", "match_date").distinct())
-    for competition_code, refresh_date in refresh_pairs:
-        if competition_code and refresh_date:
-            refresh_prediction_statuses(competition_code, refresh_date)
-
+    # Live statuses are refreshed by the scheduled poll, not by this page.
     predictions = predictions.select_related("odds")
 
     def scorer_candidates_for_team(team_name, competition_code):
