@@ -52,6 +52,14 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
     from .views import refresh_competition_odds
 
     logger.info("Running prediction for %s on %s", competition_code, match_date or "auto")
+    # A recent successful automatic run is reusable; avoid fixture-provider,
+    # model and inference work on every scheduler cycle. Explicit dates bypass it.
+    prediction_cooldown_key = f"prediction_pipeline_success::{competition_code}"
+    if not match_date:
+        recent_success = cache.get(prediction_cooldown_key)
+        if recent_success:
+            logger.info("Skipping %s: recent successful prediction run", competition_code)
+            return {**recent_success, "status": "skipped_recent_success"}
     if not match_date:
         fixtures_by_date = fetch_upcoming_fixture_groups(
             None, competition_code, days_ahead=7,
@@ -118,6 +126,8 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
         "dates_with_fixtures": dates_with_fixtures,
     }
     logger.info("PREDICTION_COVERAGE %s", result)
+    if result["status"] == "generated" and not match_date:
+        cache.set(prediction_cooldown_key, result, timeout=60 * 60 * 3)
     return result
 
 @shared_task
