@@ -2066,8 +2066,12 @@ def predict_match_outcome(home_team, away_team, models, label_encoder=None):
     #   (b) League experience — promoted teams (0 matches) trust ELO more;
     #       established teams (30+ matches) let XGBoost take over
     if isinstance(model_extra, dict):
-        elo_h = float(model_extra.get("elo_ratings", {}).get(home_team, 1500))
-        elo_a = float(model_extra.get("elo_ratings", {}).get(away_team, 1500))
+        elo_h = float(_lookup_normalized_team_value(
+            model_extra.get("elo_ratings", {}), home_team, 1500
+        ))
+        elo_a = float(_lookup_normalized_team_value(
+            model_extra.get("elo_ratings", {}), away_team, 1500
+        ))
         elo_diff = elo_h - elo_a
         league_hg = float(model_extra.get("league_home_goals", 1.4))
         league_ag = float(model_extra.get("league_away_goals", 1.1))
@@ -2075,8 +2079,14 @@ def predict_match_outcome(home_team, away_team, models, label_encoder=None):
         elo_exp_a = max(0.3, league_ag - elo_diff * 0.0035)
         # Per-team experience modifier — promoted teams (0 matches) get more
         # ELO weight on THEIR goal prediction. Established teams trust XGBoost.
-        h_exp = len(model_extra.get("team_profiles", {}).get(home_team, {}).get("overall_points", []))
-        a_exp = len(model_extra.get("team_profiles", {}).get(away_team, {}).get("overall_points", []))
+        home_profile = _lookup_normalized_team_value(
+            model_extra.get("team_profiles", {}), home_team, {}
+        )
+        away_profile = _lookup_normalized_team_value(
+            model_extra.get("team_profiles", {}), away_team, {}
+        )
+        h_exp = len(home_profile.get("overall_points", []))
+        a_exp = len(away_profile.get("overall_points", []))
         w_h = min(0.85, abs(elo_diff) / 250) * max(0.4, 1.0 - h_exp / 80)
         w_a = min(0.85, abs(elo_diff) / 250) * max(0.4, 1.0 - a_exp / 80)
         raw_h = raw_h * (1 - w_h) + elo_exp_h * w_h
