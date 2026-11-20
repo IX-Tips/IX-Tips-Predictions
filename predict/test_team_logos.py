@@ -59,3 +59,20 @@ class ApiTeamLogoFallbackTests(TestCase):
                     _team_logo("Arsenal Football Club", "PL", {"shortName": "Arsenal", "crest": "provider.png"}),
                     "short-name-catalog.png",
                 )
+
+class CachedMetadataLogoFallbackTests(TestCase):
+    def test_resolved_catalogue_logo_is_cached_for_subsequent_page_requests(self):
+        from predict.constants import TEAM_METADATA_CACHE_TIMEOUT, get_team_metadata
+
+        cached_meta = {"shortName": "Arsenal", "crest": "", "competition": "PL"}
+        with patch("predict.constants.cache.get", return_value=cached_meta):
+            with patch("predict.constants.get_football_team_logo_url", return_value="catalogue-arsenal.png"):
+                with patch("predict.constants.cache.set") as cache_set:
+                    metadata = get_team_metadata("Arsenal", "PL")
+
+        self.assertEqual(metadata["crest"], "catalogue-arsenal.png")
+        cache_set.assert_called_once_with(
+            "team_meta::Arsenal",
+            metadata,
+            timeout=TEAM_METADATA_CACHE_TIMEOUT,
+        )
