@@ -481,7 +481,7 @@ def _football_logo_url(country_slug, item):
         return None
     return (
         "https://assets.football-logos.cc/logos/"
-        f"{country_slug}/256x256/{item['slug']}.{item['hash']}.png"
+        f"{country_slug}/512x512/{item['slug']}.{item['hash']}.png"
     )
 
 
