@@ -2322,8 +2322,7 @@ def save_predictions(matches, model_home=None, model_away=None, le=None, match_d
                     "market_under_1_5": market_under_1_5,
                     "market_under_2_5": market_under_2_5,
                     "market_gg": market_gg, "market_nogg": market_nogg,
-                    "odds_home": odds_home, "odds_draw": odds_draw,
-                    "odds_away": odds_away, "status": saved_status,
+                    "status": saved_status,
                 }
                 if existing_obj:
                     obj = existing_obj
