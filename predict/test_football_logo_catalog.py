@@ -40,7 +40,7 @@ class FootballLogoCatalogTests(SimpleTestCase):
 
     def test_resolves_provider_aliases_across_competitions(self):
         cases = [
-            ("Athletic Club", "PD", "/spain/512x512/athletic-club-bilbao."),
+            ("Athletic Club", "PD", "/spain/512x512/athletic-club."),
             ("Paris Saint-Germain", "FL1", "/france/512x512/paris-saint-germain."),
             ("Olympique Marseille", "FL1", "/france/512x512/marseille."),
             ("Olympique Lyon", "FL1", "/france/512x512/lyon."),
