@@ -1,0 +1,469 @@
+{% extends "predict/base_prediction_dashboard.html" %}
+
+{% block page_title %}IX-Tips - Match Predictions{% endblock %}
+
+{% block extra_head_links %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"/>
+{% endblock %}
+
+{% block body_class %}{% endblock %}
+
+{% block page_styles %}
+{% include "predict/partials/prediction_shell_styles.html" %}
+.support-card, .sidebar-left, .sidebar-right, .page-shell { margin-bottom: 20px; }
+.sidebar-right {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 22px;
+  box-shadow: 0 18px 40px var(--shadow);
+  backdrop-filter: blur(10px);
+  padding: 10px;
+}
+.menu-list { margin-top: 8px; }
+.sidebar-right h5 {
+  font-size: 0.92rem;
+  font-weight: 800;
+  margin-bottom: 0;
+  color: var(--text-primary);
+}
+.sidebar-right .form-select-sm {
+  font-size: 0.78rem;
+  padding-top: 0.15rem;
+  padding-bottom: 0.15rem;
+}
+.sidebar-right .table {
+  font-size: 0.8rem;
+  color: var(--text-primary);
+}
+.team-logo {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+.page-header { gap: 18px; margin-bottom: 24px; padding-bottom: 18px; }
+.section-title { font-size: clamp(1.9rem, 3vw, 2.4rem); }
+.section-subtitle { margin-top: 6px; font-size: 0.98rem; color: var(--text-secondary); }
+.action-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+}
+.toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.date-input {
+  max-width: 220px;
+  min-height: 44px;
+  border-radius: 14px;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.predictions-grid {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 12px 28px var(--shadow);
+  background-color: var(--card-bg);
+  margin-bottom: 20px;
+  border: 1px solid var(--border-color);
+}
+.grid-header, .grid-row {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--border-color);
+}
+.grid-header {
+  background: var(--table-header-bg);
+  font-weight: bold;
+  padding: 12px 0;
+  color: var(--text-primary);
+  text-align: center;
+  font-size: 0.72rem;
+}
+.winner-circle {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  border-radius: 50%;
+  margin-left: 0;
+}
+.grid-row {
+  padding: 10px 0;
+  background: var(--card-bg);
+  transition: background-color 0.2s ease;
+}
+.grid-row:hover { background-color: var(--hover-bg); }
+.grid-row:last-child { border-bottom: none; }
+.grid-col {
+  padding: 9px 5px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.72rem;
+  color: var(--text-primary);
+}
+.grid-col:nth-child(1) { flex: 1.2; text-align: center; }
+.grid-col:nth-child(2) { flex: 1.1; text-align: center; }
+.grid-col:nth-child(3) { flex: 3.6; text-align: center; justify-content: flex-start; flex-direction: row; flex-wrap: nowrap; min-width: 0; }
+.grid-col:nth-child(4) { flex: 1; text-align: center; }
+.grid-col:nth-child(5) { flex: 1.2; text-align: center; }
+.grid-col:nth-child(6) { flex: 0.9; text-align: center; }
+.match-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  text-decoration: none;
+  color: inherit;
+}
+.match-info .team-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 0 2px;
+  min-width: 0;
+}
+.match-info .team-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 84px;
+}
+.match-info .vs-separator {
+  font-weight: bold;
+  margin: 0 4px;
+  color: var(--text-secondary);
+  font-size: 0.8em;
+}
+.comp-logo {
+  height: 14px;
+  object-fit: contain;
+  margin-bottom: 3px;
+}
+.comp-name {
+  font-size: 0.64rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.date-time .time { font-size: 0.6rem; color: var(--text-secondary); }
+.form-dots {
+  display: flex;
+  gap: 2px;
+  margin-top: 2px;
+  justify-content: center;
+}
+.form-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  font-size: 0.48rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+.form-w { background: #16a34a; }
+.form-d { background: #ca8a04; }
+.form-l { background: #dc2626; }
+.predicted-score-value {
+  font-size: 0.84rem;
+  font-weight: bold;
+  color: var(--text-primary);
+}
+.predicted-winner-chip.bg-secondary {
+  background-color: var(--hover-bg);
+  color: var(--text-secondary);
+}
+.outcome-prediction {
+  position: relative;
+  padding: 0 10px;
+}
+.confidence-bar-container {
+  width: 76px;
+  height: 16px;
+  background-color: var(--hover-bg);
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.confidence-bar {
+  height: 100%;
+  background-color: var(--blue);
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 10px;
+}
+.confidence-text {
+  color: white;
+  font-size: 0.62rem;
+  font-weight: bold;
+  position: relative;
+  z-index: 1;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.4);
+}
+.status .badge {
+  font-size: 0.72rem;
+  padding: 4px 8px;
+  border-radius: 12px;
+  min-width: 60px;
+}
+.status small {
+  font-size: 0.7em;
+  color: var(--text-secondary);
+  display: block;
+}
+@media (max-width: 768px) {
+  .grid-header, .grid-row { flex-wrap: wrap; }
+  .grid-col {
+    flex: 1 1 50%;
+    min-width: unset;
+    padding: 7px 4px;
+  }
+  .grid-col:nth-child(1) { flex: 1 1 50%; order: 1; }
+  .grid-col:nth-child(2) { flex: 1 1 50%; order: 2; }
+  .grid-col:nth-child(3) { flex: 1 1 100%; order: 3; justify-content: space-around; }
+  .grid-col:nth-child(4) { flex: 1 1 50%; order: 4; }
+  .grid-col:nth-child(5) { flex: 1 1 50%; order: 5; }
+  .grid-col:nth-child(6) { flex: 1 1 100%; order: 6; }
+  .match-info {
+    flex-direction: row;
+    justify-content: space-around;
+  }
+  .match-info .team-display {
+    flex-direction: column;
+    margin: 0 2px;
+  }
+  .team-logo { margin-right: 0; margin-bottom: 3px; width: 28px; height: 28px; }
+  .team-name { max-width: 90%; }
+  .vs-separator { display: none; }
+  .predicted-score-value {
+    font-size: 1.1em;
+    font-weight: bold;
+    color: var(--text-primary);
+  }
+  .predicted-score-value.correct { color: #28a745; }
+  .date-input {
+    max-width: 100%;
+    width: 100%;
+  }
+  .action-row { justify-content: flex-start; }
+  .sidebar-right {
+    padding: 16px;
+    border-radius: 18px;
+  }
+  .confidence-bar-container {
+    width: 80px;
+    height: 16px;
+  }
+  .confidence-text { font-size: 0.65em; }
+}
+{% endblock %}
+
+{% block left_sidebar %}
+{% include "predict/partials/prediction_menu_block.html" with active_page="predictions" %}
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+  <div>
+    <h1 class="section-title">Match Predictions</h1>
+    <div class="section-subtitle">Daily match outcomes with projected scores and settled results.</div>
+  </div>
+  <div class="action-row">
+    <form id="filter-form" method="get" class="d-flex gap-2">
+      <input type="text" id="date-picker" name="match_date" placeholder="Select date" class="form-control date-input" readonly value="{{ selected_date }}">
+      <input type="hidden" name="competition" value="{{ selected_competition }}">
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block page_content %}
+<div style="overflow-x:auto;">
+<div class="predictions-grid">
+  <div class="grid-header">
+    <div class="grid-col">Time</div>
+    <div class="grid-col">Competition</div>
+    <div class="grid-col">Match</div>
+    <div class="grid-col">Score</div>
+    <div class="grid-col">Pick</div>
+    <div class="grid-col">Ft</div>
+  </div>
+
+  {% if predictions|length == 0 %}
+    <div class="grid-row">
+      <div class="grid-col col-12 text-center text-muted">No predictions available for the selected date.</div>
+    </div>
+  {% else %}
+    {% for match in predictions %}
+    <div class="grid-row">
+      <div class="grid-col date-time">
+        <div class="time">{{ match.match_time }}</div>
+      </div>
+
+      <div class="grid-col competition-info">
+        <img src="{{ match.competition_logo }}" class="comp-logo">
+        <span class="comp-name">{{ match.competition }}</span>
+      </div>
+
+      <div class="grid-col match-info">
+        <a href="{{ match.detail_url }}" class="match-link">
+          <div class="team-display">
+            <img src="{{ match.home_logo }}" class="team-logo">
+            <span class="team-name">{{ match.home_team }}</span>
+            {% if match.home_form %}
+            <span class="form-dots">{% for r in match.home_form %}<span class="form-dot form-{{ r|lower }}">{{ r }}</span>{% endfor %}</span>
+            {% endif %}
+          </div>
+          <span class="vs-separator">-</span>
+          <div class="team-display">
+            <img src="{{ match.away_logo }}" class="team-logo">
+            <span class="team-name">{{ match.away_team }}</span>
+            {% if match.away_form %}
+            <span class="form-dots">{% for r in match.away_form %}<span class="form-dot form-{{ r|lower }}">{{ r }}</span>{% endfor %}</span>
+            {% endif %}
+          </div>
+        </a>
+      </div>
+
+      <div class="grid-col predicted-score-numeric">
+        {% if match.status == "FINISHED" %}
+          {% if match.predicted_home_goals == match.actual_home_goals and match.predicted_away_goals == match.actual_away_goals %}
+            <span class="text-success" title="Correct score!">
+              {{ match.predicted_home_goals }} - {{ match.predicted_away_goals }}
+            </span>
+          {% else %}
+            <span class="text-danger" title="Incorrect score">
+              {{ match.predicted_home_goals }} - {{ match.predicted_away_goals }}
+            </span>
+          {% endif %}
+        {% else %}
+          <span>{{ match.predicted_home_goals }} - {{ match.predicted_away_goals }}</span>
+        {% endif %}
+      </div>
+
+      <div class="grid-col outcome-prediction">
+        {% if match.status == "FINISHED" %}
+          {% if match.winner == match.actual_winner %}
+            <div class="winner-circle bg-success text-white">{{ match.winner }}</div>
+          {% else %}
+            <div class="winner-circle bg-danger text-white">{{ match.winner }}</div>
+          {% endif %}
+        {% else %}
+          <div class="winner-circle bg-primary text-white">{{ match.winner }}</div>
+        {% endif %}
+
+        <div class="grid-col"></div>
+        <div class="grid-col Odds">
+          {% if match.display_odds %}
+            <div class="text text-green-600">{{ match.display_odds|floatformat:2 }}</div>
+          {% else %}
+            N/A
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="grid-col actual-score-numeric">
+        <span class="predicted-score-value">{% if match.actual_result %}
+           <small>{{ match.actual_result }}</small>
+        {% endif %}</span>
+      </div>
+    </div>
+    {% endfor %}
+  {% endif %}
+</div>
+</div>
+
+<nav class="mt-4">
+  <ul class="pagination justify-content-center">
+    {% if page_obj.has_previous %}
+      <li class="page-item">
+        <a class="page-link"
+           href="?page={{ page_obj.previous_page_number }}{% if selected_date %}&match_date={{ selected_date }}{% endif %}">
+          Previous
+        </a>
+      </li>
+    {% endif %}
+    <li class="page-item disabled">
+      <span class="page-link">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    </li>
+    {% if page_obj.has_next %}
+      <li class="page-item">
+        <a class="page-link"
+           href="?page={{ page_obj.next_page_number }}{% if selected_date %}&match_date={{ selected_date }}{% endif %}">
+          Next
+        </a>
+      </li>
+    {% endif %}
+  </ul>
+</nav>
+{% endblock %}
+
+{% block right_sidebar %}
+{% include "predict/league_tables.html" %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const form = document.getElementById('filter-form');
+  flatpickr("#date-picker", {
+    altInput: true,
+    altFormat: "F j, Y",
+    dateFormat: "Y-m-d",
+    defaultDate: "{{ selected_date|default:'' }}",
+    onChange: function() {
+      form.submit();
+    }
+  });
+  const compSelect = document.getElementById("competition-select");
+  if (compSelect) {
+    compSelect.addEventListener("change", function() {
+      const comp = this.value;
+      fetch(`/ajax/league-table/?competition=${comp}`)
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById("league-table-container").innerHTML = data.html;
+        });
+    });
+  }
+  window.setTimeout(function() {
+    window.location.reload();
+  }, 300000);
+});
+</script>
+{% endblock %}
