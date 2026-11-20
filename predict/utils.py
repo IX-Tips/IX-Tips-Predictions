@@ -1278,12 +1278,13 @@ def _get_global_elo():
     if cached is not None:
         return cached
     try:
-        elo, _, last_match = compute_cross_league_elo()
+        elo, league_averages = compute_cross_league_elo()
         if elo:
             cache.set(GLOBAL_ELO_CACHE_KEY, elo, timeout=60 * 60 * 25)
-            if last_match:
-                cache.set(GLOBAL_LAST_MATCH_KEY, last_match, timeout=60 * 60 * 25)
-            logger.info("Global ELO computed: %d teams across leagues", len(elo))
+            logger.info(
+                "Global ELO computed: %d teams across %d leagues",
+                len(elo), len(league_averages),
+            )
         return elo
     except Exception as e:
         logger.warning("Failed to compute global ELO: %s", e)
@@ -1426,19 +1427,12 @@ def build_training_features(df, lookback=8):
         "home_goals": league_home_goals,
         "away_goals": league_away_goals,
     }
-    # Cross-league ELO: use pre-computed global ratings as the starting point
-    # so promoted teams carry their Championship ELO (converted), not 1500.
-    _global_elo = {}
-    try:
-        _global_elo = _get_global_elo()
-    except Exception as e:
-        logger.warning("Global ELO unavailable, using per-league defaults: %s", e)
+    # Build Elo strictly in chronological order from matches available before
+    # each training row. Seeding this with a full-history/global Elo snapshot
+    # leaks future results into historical features and inflates validation.
     team_profiles = defaultdict(_new_team_profile)
     h2h_profiles = defaultdict(list)
     elo_ratings = defaultdict(lambda: 1500.0)
-    if _global_elo:
-        for team, rating in _global_elo.items():
-            elo_ratings[team] = rating
     feature_rows = []
 
     for _, row in history.iterrows():
@@ -1555,34 +1549,54 @@ def train_models(X, y_home, y_away, sample_weight=None):
     sample_weight = None if sample_weight is None else np.asarray(sample_weight, dtype=float)
     n = len(X_numeric)
 
-    # ── Walk-forward validation ───────────────────────────────────────────
+    # ── Expanding-window validation ───────────────────────────────────────
+    # Keep each validation block strictly after its training block. The prior
+    # fold arithmetic produced zero folds for 100–199 rows and swallowed all
+    # failures, making the reported quality opaque.
     try:
         import xgboost as _xgb
         from sklearn.metrics import mean_absolute_error as _mae
-        n = len(X_numeric)
-        if n >= 100:
-            folds = min(4, n // 200)
-            fsize = n // (folds + 1)
+        if n >= 120:
+            fold_count = min(4, max(1, n // 250))
+            initial_train = max(80, int(n * 0.60))
+            remaining = n - initial_train
+            block_size = max(1, remaining // fold_count)
             wf_metrics = []
-            for f in range(1, folds + 1):
-                te = f * fsize
-                vs = te; ve = min(n, vs + fsize // 2)
-                if ve <= vs: continue
-                mh = _xgb.XGBRegressor(n_estimators=200, objective="count:poisson",
-                      max_depth=5, learning_rate=0.05, random_state=42, n_jobs=-1)
-                ma = _xgb.XGBRegressor(n_estimators=200, objective="count:poisson",
-                      max_depth=5, learning_rate=0.05, random_state=42, n_jobs=-1)
-                mh.fit(X_numeric.iloc[:te], y_home.iloc[:te])
-                ma.fit(X_numeric.iloc[:te], y_away.iloc[:te])
-                mae_h = _mae(y_home.iloc[vs:ve], mh.predict(X_numeric.iloc[vs:ve]))
-                mae_a = _mae(y_away.iloc[vs:ve], ma.predict(X_numeric.iloc[vs:ve]))
-                wf_metrics.append((te, vs, ve, mae_h, mae_a))
+            for fold in range(fold_count):
+                train_end = initial_train + fold * block_size
+                valid_start = train_end
+                valid_end = n if fold == fold_count - 1 else min(n, valid_start + block_size)
+                if valid_end <= valid_start:
+                    continue
+                mh = _xgb.XGBRegressor(
+                    n_estimators=220, objective="count:poisson", max_depth=4,
+                    learning_rate=0.035, min_child_weight=3, subsample=0.85,
+                    colsample_bytree=0.85, reg_lambda=2.0, random_state=42, n_jobs=-1,
+                )
+                ma = _xgb.XGBRegressor(
+                    n_estimators=220, objective="count:poisson", max_depth=4,
+                    learning_rate=0.035, min_child_weight=3, subsample=0.85,
+                    colsample_bytree=0.85, reg_lambda=2.0, random_state=42, n_jobs=-1,
+                )
+                mh.fit(X_numeric.iloc[:train_end], y_home.iloc[:train_end])
+                ma.fit(X_numeric.iloc[:train_end], y_away.iloc[:train_end])
+                mae_h = _mae(y_home.iloc[valid_start:valid_end], mh.predict(X_numeric.iloc[valid_start:valid_end]))
+                mae_a = _mae(y_away.iloc[valid_start:valid_end], ma.predict(X_numeric.iloc[valid_start:valid_end]))
+                baseline_h = _mae(y_home.iloc[valid_start:valid_end], np.repeat(y_home.iloc[:train_end].mean(), valid_end-valid_start))
+                baseline_a = _mae(y_away.iloc[valid_start:valid_end], np.repeat(y_away.iloc[:train_end].mean(), valid_end-valid_start))
+                wf_metrics.append((mae_h, mae_a, baseline_h, baseline_a))
             if wf_metrics:
-                avg_h = sum(m[3] for m in wf_metrics) / len(wf_metrics)
-                avg_a = sum(m[4] for m in wf_metrics) / len(wf_metrics)
-                logger.info(f" Walk-forward ({len(wf_metrics)} folds): MAE home={avg_h:.3f} away={avg_a:.3f}")
-    except Exception:
-        pass
+                avg_h = float(np.mean([m[0] for m in wf_metrics]))
+                avg_a = float(np.mean([m[1] for m in wf_metrics]))
+                base_h = float(np.mean([m[2] for m in wf_metrics]))
+                base_a = float(np.mean([m[3] for m in wf_metrics]))
+                logger.info(
+                    "WALK_FORWARD folds=%d model_mae_home=%.3f model_mae_away=%.3f "
+                    "baseline_mae_home=%.3f baseline_mae_away=%.3f",
+                    len(wf_metrics), avg_h, avg_a, base_h, base_a,
+                )
+    except Exception as exc:
+        logger.warning("Walk-forward validation skipped: %s", exc)
 
     # Full training on 80/20 split (for calibration + final model)
     split_index = max(1, int(n * 0.8))
@@ -1602,12 +1616,14 @@ def train_models(X, y_home, y_away, sample_weight=None):
     try:
         import xgboost as xgb
         model_home = xgb.XGBRegressor(
-            n_estimators=300,
+            n_estimators=420,
             objective="count:poisson",
-            max_depth=6,
-            learning_rate=0.05,
-            subsample=1.0,
-            colsample_bytree=1.0,
+            max_depth=4,
+            learning_rate=0.035,
+            min_child_weight=3,
+            subsample=0.85,
+            colsample_bytree=0.85,
+            reg_lambda=2.0,
             random_state=42,
             n_jobs=-1,
         )
@@ -1626,10 +1642,12 @@ def train_models(X, y_home, y_away, sample_weight=None):
         kind = "XGBoost(count:poisson)"
     except ImportError:
         model_home = RandomForestRegressor(
-            n_estimators=300, random_state=42, min_samples_leaf=2, n_jobs=-1,
+            n_estimators=420, random_state=42, min_samples_leaf=4,
+            max_features=0.85, n_jobs=-1,
         )
         model_away = RandomForestRegressor(
-            n_estimators=300, random_state=42, min_samples_leaf=2, n_jobs=-1,
+            n_estimators=420, random_state=42, min_samples_leaf=4,
+            max_features=0.85, n_jobs=-1,
         )
         model_home.fit(X_tr, yh_tr, sample_weight=sw_tr)
         model_away.fit(X_tr, ya_tr, sample_weight=sw_tr)
