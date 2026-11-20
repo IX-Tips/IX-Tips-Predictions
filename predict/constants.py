@@ -528,9 +528,9 @@ FOOTBALL_TEAM_LOGO_ALIASES = {
     "bristol rovers fc": "bristol rovers",
     "notts": "notts county",
     # Spain
-    "athletic": "athletic club bilbao",
-    "athletic club": "athletic club bilbao",
-    "athletic bilbao": "athletic club bilbao",
+    "athletic": "athletic bilbao",
+    "athletic club": "athletic bilbao",
+    "athletic bilbao": "athletic bilbao",
     "barca": "barcelona",
     "fc barcelona": "barcelona",
     "atleti": "atletico madrid",
