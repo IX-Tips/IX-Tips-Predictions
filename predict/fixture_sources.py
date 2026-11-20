@@ -127,10 +127,23 @@ def _provider_order(competition_code):
 
 
 def _team_key(value):
-    value = (value or "").casefold()
-    value = re.sub(r"\b(fc|cf|ac|sc|afc|club)\b", " ", value)
+    value = (value or "").casefold().replace("&", " and ")
+    value = re.sub(r"\b(fc|cf|ac|sc|afc|club|de|da|del)\b", " ", value)
     value = re.sub(r"[^a-z0-9]+", " ", value)
-    return " ".join(value.split())
+    value = " ".join(value.split())
+    aliases = {
+        "man city": "manchester city",
+        "man utd": "manchester united",
+        "brighton and hove albion": "brighton",
+        "brighton hove albion": "brighton",
+        "spurs": "tottenham",
+        "tottenham hotspur": "tottenham",
+        "celta vigo": "celta",
+        "athletic bilbao": "athletic",
+        "barca": "barcelona",
+        "atleti": "atletico madrid",
+    }
+    return aliases.get(value, value)
 
 
 def _fixture_key(match):
