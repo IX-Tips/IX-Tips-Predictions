@@ -75,6 +75,8 @@ class Command(BaseCommand):
                 continue
 
             rate_complete += 1
+            sums["rate_complete_display_home_abs"] += abs(ph - ah)
+            sums["rate_complete_display_away_abs"] += abs(pa - aa)
             for side, pred, actual in (("home", float(hr), ah), ("away", float(ar), aa)):
                 error = abs(pred - actual)
                 bias = pred - actual
@@ -93,8 +95,7 @@ class Command(BaseCommand):
                 "rate_mae": _ratio(sums[f"rate_{side}_abs"], rate_complete),
                 "rate_bias_pred_minus_actual": _ratio(sums[f"rate_{side}_bias"], rate_complete),
                 "displayed_score_mae_same_sample": _ratio(
-                    sum(c[f"display_{side}_abs"] for c in comps.values())
-                    - 0, total
+                    sums[f"rate_complete_display_{side}_abs"], rate_complete
                 ),
             }
 
