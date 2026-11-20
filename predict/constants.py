@@ -307,6 +307,9 @@ def country_flag_url(competition_code):
 
 API_TOKEN = getattr(settings, "FOOTBALL_DATA_API_KEY", os.getenv("FOOTBALL_DATA_API_KEY", ""))
 ODDS_API_KEY = getattr(settings, "ODDS_API_KEY", os.getenv("ODDS_API_KEY", ""))
+APIFOOTBALL_API_KEY = getattr(
+    settings, "APIFOOTBALL_API_KEY", os.getenv("APIFOOTBALL_API_KEY", "")
+)
 BASE_URL = getattr(settings, "FOOTBALL_DATA_BASE_URL", os.getenv("FOOTBALL_DATA_BASE_URL", "https://api.football-data.org/v4"))
 
 TEAM_METADATA_CACHE_TIMEOUT = 60 * 60 * 24 * 30
