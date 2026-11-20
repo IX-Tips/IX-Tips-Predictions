@@ -76,3 +76,27 @@ class CachedMetadataLogoFallbackTests(TestCase):
             metadata,
             timeout=TEAM_METADATA_CACHE_TIMEOUT,
         )
+
+
+class TeamLogoDashboardTests(TestCase):
+    def test_displays_standings_teams_and_resolved_logo_metadata(self):
+        from django.test import RequestFactory
+        from predict.views import team_logos_preview
+
+        request = RequestFactory().get("/team_logos/")
+        standings = [{"team": {"name": "Arsenal", "shortName": "ARS", "crest": "provider-crest.png"}}]
+        with patch("predict.views.competitions", {"PL": "Premier League"}):
+            with patch("predict.views.get_league_table", return_value=standings):
+                with patch("predict.views.get_team_metadata", return_value={
+                    "shortName": "ARS", "crest": "catalog-crest.png", "logo_source": "catalogue"
+                }):
+                    with patch("predict.views.resolve_competition_logo", return_value="league-logo.png"):
+                        response = team_logos_preview(request)
+
+        self.assertEqual(response.status_code, 200)
+        group = response.context_data["preview_data"][0] if hasattr(response, "context_data") else None
+        # Django render() returns a response whose template context is available in test instrumentation.
+        self.assertIsNotNone(group)
+        self.assertEqual(group["teams"][0]["name"], "Arsenal")
+        self.assertEqual(group["teams"][0]["crest"], "catalog-crest.png")
+        self.assertEqual(group["teams"][0]["provider_crest"], "provider-crest.png")
