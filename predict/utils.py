@@ -2405,6 +2405,14 @@ def _normalize_apifootball_odds(payload):
                 if not outcomes:
                     continue
                 if bet_name in {"match winner", "1x2", "fulltime result", "match result"}:
+                    for outcome in outcomes:
+                        label = outcome["name"].strip().lower()
+                        if label in {"home", "1"}:
+                            outcome["name"] = home
+                        elif label in {"away", "2"}:
+                            outcome["name"] = away
+                        elif label in {"draw", "x"}:
+                            outcome["name"] = "Draw"
                     markets.append({"key": "h2h", "outcomes": outcomes})
                 elif bet_name in {"goals over/under", "over/under", "total goals"}:
                     markets.append({"key": "over_under", "outcomes": outcomes})
