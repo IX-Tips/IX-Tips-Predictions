@@ -9,5 +9,5 @@
   20   6    *   *   *     cd /code && python manage.py run_task odds
   30   6    *   *   *     cd /code && python manage.py run_task combo
   1    *    *   *   *     cd /code && python manage.py run_task tables
-  0    *    *   *   *     cd /code && python manage.py run_task metadata
+  45   4    *   *   *     cd /code && python manage.py run_task metadata
   */5  *    *   *   *     cd /code && python manage.py run_task live

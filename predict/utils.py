@@ -2912,11 +2912,19 @@ def get_league_table(competition):
 
 def fetch_and_cache_team_metadata():
     """
-    Populate cache keys:
-      - competition_meta::<code>
-      - team_meta::<team name>
+    Populate competition/team metadata and resolve missing crests in this
+    scheduled job. Page requests should only read already-cached logo URLs.
     """
     from .providers import dispatch_provider, is_fd
+    from .constants import (
+        TEAM_METADATA_CACHE_TIMEOUT,
+        country_flag_url,
+        get_football_competition_logo_url,
+        get_football_team_logo_url,
+        team_meta_cache_key,
+    )
+
+    cached_teams = 0
     for comp_code, comp_name in COMPETITIONS.items():
         if not is_fd(comp_code):
             _, teams = dispatch_provider(comp_code, "fetch_teams")
@@ -2931,18 +2939,46 @@ def fetch_and_cache_team_metadata():
             teams = json_data.get("teams", [])
             comp_meta = {
                 "name": json_data.get("competition", {}).get("name", comp_name),
-                "crest": json_data.get("competition", {}).get("emblem", "")
+                "crest": json_data.get("competition", {}).get("emblem", ""),
             }
-        cache.set(f"competition_meta::{comp_code}", comp_meta, timeout=60 * 60 * 24 * 30)
+
+        if not comp_meta.get("crest"):
+            comp_meta["crest"] = get_football_competition_logo_url(comp_code) or ""
+        cache.set(
+            f"competition_meta::{comp_code}",
+            comp_meta,
+            timeout=TEAM_METADATA_CACHE_TIMEOUT,
+        )
+
         for team in teams:
             team_name = team.get("name")
             if not team_name:
                 continue
-            team_meta = {
-                "shortName": team.get("shortName", team_name),
-                "crest": team.get("crest", ""),
-                "competition": comp_code
-            }
-            cache.set(f"team_meta::{team_name}", team_meta, timeout=60 * 60 * 24 * 30)
+            crest = team.get("crest") or ""
+            logo_source = "provider" if crest else ""
+            if not crest:
+                crest = get_football_team_logo_url(team_name, comp_code) or ""
+                if crest:
+                    logo_source = "football-logos.cc"
+            if not crest:
+                crest = country_flag_url(comp_code) or ""
+                if crest:
+                    logo_source = "competition-country-flag"
 
+            cache.set(
+                team_meta_cache_key(team_name),
+                {
+                    "shortName": team.get("shortName", team_name),
+                    "crest": crest,
+                    "competition": comp_code,
+                    "logo_source": logo_source,
+                },
+                timeout=TEAM_METADATA_CACHE_TIMEOUT,
+            )
+            cached_teams += 1
+
+    logger.info(
+        "TEAM_METADATA_CACHE_SUMMARY competitions=%s teams=%s",
+        len(COMPETITIONS), cached_teams,
+    )
     return True

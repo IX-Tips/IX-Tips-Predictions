@@ -84,6 +84,43 @@ class BulkFixtureDiscoveryTests(TestCase):
     @patch("predict.fixture_sources.fetch_fixture_matches_by_date")
     @patch("predict.providers._om_current_matches")
     @patch("predict.fixture_sources.supports_open_matchday", return_value=True)
+    def test_bulk_feed_never_includes_the_eighth_calendar_day(
+        self, supports, om_matches, fetch_by_date
+    ):
+        from datetime import date, timedelta
+        today = date.today()
+        sixth_day = today + timedelta(days=6)
+        eighth_day = today + timedelta(days=7)
+        om_matches.return_value = [
+            {
+                "utcDate": f"{sixth_day.isoformat()}T11:30:00Z",
+                "status": "TIMED",
+                "homeTeam": {"name": "Within Window"},
+                "awayTeam": {"name": "Visitor"},
+            },
+            {
+                "utcDate": f"{eighth_day.isoformat()}T14:00:00Z",
+                "status": "TIMED",
+                "homeTeam": {"name": "Outside Window"},
+                "awayTeam": {"name": "Visitor"},
+            },
+        ]
+        fetch_by_date.side_effect = lambda key, code, day: [{
+            "utcDate": f"{day}T12:00:00Z",
+            "status": "TIMED",
+            "homeTeam": {"name": "Home"},
+            "awayTeam": {"name": "Away"},
+        }]
+
+        from predict.fixture_sources import fetch_upcoming_fixture_groups
+        grouped = fetch_upcoming_fixture_groups(None, "TUR", days_ahead=45)
+
+        self.assertEqual(list(grouped), [sixth_day.isoformat()])
+        fetch_by_date.assert_called_once_with(None, "TUR", sixth_day.isoformat())
+
+    @patch("predict.fixture_sources.fetch_fixture_matches_by_date")
+    @patch("predict.providers._om_current_matches")
+    @patch("predict.fixture_sources.supports_open_matchday", return_value=True)
     def test_bulk_feed_discovers_fixture_dates_without_scanning_every_day(
         self, supports, om_matches, fetch_by_date
     ):

@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+import time
 
 from django.core.cache import cache
 from django.utils import timezone
@@ -171,7 +172,10 @@ def fetch_upcoming_fixture_groups(api_key, competition_code, days_ahead=45):
     from . import providers
 
     today = date.today()
-    last_day = today + timedelta(days=max(1, int(days_ahead)))
+    # Prediction generation is intentionally capped at seven calendar days.
+    # Keep the clamp here as a final guard for every caller.
+    bounded_days = min(7, max(1, int(days_ahead)))
+    last_day = today + timedelta(days=bounded_days - 1)
     primary = get_provider(competition_code)
     bulk_provider = None
     season_matches = []
@@ -231,7 +235,7 @@ def fetch_upcoming_fixture_groups(api_key, competition_code, days_ahead=45):
     from .utils import find_upcoming_match_dates
     dates = find_upcoming_match_dates(
         fetch_fixture_matches_by_date, api_key, competition_code,
-        start_date=today, days_ahead=max(1, int(days_ahead)),
+        start_date=today, days_ahead=bounded_days,
     )
     grouped = {}
     for match_day in dates:
@@ -260,9 +264,14 @@ def fetch_fixture_matches_by_date(api_key, competition_code, match_date):
             logger.warning("Fixture provider %s not configured for %s: %s", provider, competition_code, reason)
             continue
 
+        provider_started = time.monotonic()
         try:
             matches = _dispatch_explicit_provider(provider, competition_code, match_date)
         except Exception as exc:
+            logger.info(
+                "FIXTURE_PROVIDER_TIMING competition=%s date=%s provider=%s elapsed_seconds=%.3f status=error fixtures=0",
+                competition_code, match_date, provider, time.monotonic() - provider_started,
+            )
             record_provider_diagnostic(
                 competition_code, provider, "error",
                 error=exc, match_date=match_date,
@@ -274,6 +283,10 @@ def fetch_fixture_matches_by_date(api_key, competition_code, match_date):
             continue
 
         valid_count = sum(1 for match in (matches or []) if _fixture_key(match) is not None)
+        logger.info(
+            "FIXTURE_PROVIDER_TIMING competition=%s date=%s provider=%s elapsed_seconds=%.3f status=ok fixtures=%s",
+            competition_code, match_date, provider, time.monotonic() - provider_started, valid_count,
+        )
         request_health = _diagnostic_cache_get("provider_request_health::LF", {}) if provider == "LF" else {}
         recent_lf_error = False
         if request_health.get("status") == "error" and request_health.get("checked_at"):
