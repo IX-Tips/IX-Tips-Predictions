@@ -62,6 +62,7 @@ from .utils import (
     update_actuals_for_top_picks,
     get_team_recent_form,
     canonical_fixture_match_id,
+    _normalize_team_lookup_value,
 )
 
 # -------------------------
@@ -231,10 +232,7 @@ def format_kickoff_time(utc_date):
 
 
 def normalize_team_lookup_key(name):
-    candidate = (name or "").strip().lower()
-    candidate = re.sub(r"[^\w\s]", " ", candidate)
-    candidate = re.sub(r"\b(fc|cf|ac|sc|afc|club|de|da|del)\b", " ", candidate)
-    return re.sub(r"\s+", " ", candidate).strip()
+    return _normalize_team_lookup_value(name)
 
 
 def fetch_matches_for_status_refresh(competition_code, match_date):
