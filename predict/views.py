@@ -2694,13 +2694,26 @@ def auto_track_combo_slip(context, size, market_filter="", style="safe", return_
 
 
 def predictions_view(request):
-    match_date = request.GET.get("match_date")
+    today = timezone.localdate()
+    prediction_window_end = today + timedelta(days=7)
+    requested_match_date = request.GET.get("match_date")
+    match_date = requested_match_date
     predictions = MatchPrediction.objects.select_related("odds").all().order_by("match_date")
 
     if match_date:
-        predictions = predictions.filter(match_date=match_date)
-    else:
-        today = timezone.localdate()
+        try:
+            requested_day = datetime.strptime(match_date, "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            requested_day = None
+        if requested_day and requested_day > prediction_window_end:
+            match_date = None
+        elif requested_day:
+            predictions = predictions.filter(match_date=requested_day)
+        else:
+            match_date = None
+
+    if not match_date:
+        predictions = predictions.filter(match_date__lte=prediction_window_end)
         available_dates = list(
             MatchPrediction.objects.filter(match_date__gte=today)
             .order_by("match_date")
@@ -2719,11 +2732,8 @@ def predictions_view(request):
         else:
             predictions = predictions.exclude(status="FINISHED")
 
-    refresh_pairs = list(predictions.values_list("competition", "match_date").distinct())
-    for competition_code, refresh_date in refresh_pairs:
-        if competition_code and refresh_date:
-            refresh_prediction_statuses(competition_code, refresh_date)
-
+    # Page rendering is read-only: provider status refreshes belong to the
+    # scheduled live task, not to visitor requests.
     predictions = predictions.select_related("odds")
 
     selected_code = request.GET.get("competition")
@@ -2735,7 +2745,23 @@ def predictions_view(request):
             selected_code = "PL"
 
     league_table = get_league_table(selected_code)
-    top_predictions = get_top_predictions(limit=10)
+    # Serve the sidebar from persisted picks. Never train models or generate
+    # candidates while rendering this page.
+    top_predictions = {}
+    stored_picks = TopPick.objects.filter(
+        match_date__gte=today,
+        match_date__lte=prediction_window_end,
+    ).order_by("-confidence", "match_date")[:10]
+    for pick in stored_picks:
+        day_key = pick.match_date.isoformat()
+        top_predictions.setdefault(day_key, []).append({
+            "home_team": pick.home_team,
+            "away_team": pick.away_team,
+            "tip": pick.tip,
+            "confidence": f"{pick.confidence:.0f}",
+            "match_date": day_key,
+            "odds": pick.odds,
+        })
 
     display_data = []
     for p in predictions:
