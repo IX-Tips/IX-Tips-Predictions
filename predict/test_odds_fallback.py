@@ -1,6 +1,8 @@
+from unittest.mock import patch
+
 from django.test import SimpleTestCase
 
-from .utils import _normalize_apifootball_odds
+from .utils import _normalize_apifootball_odds, fetch_odds_for_date
 
 
 class ApiFootballOddsFallbackTests(SimpleTestCase):
@@ -56,6 +58,46 @@ class ApiFootballOddsFallbackTests(SimpleTestCase):
         )
         self.assertEqual(markets[1]["key"], "over_under")
         self.assertEqual(markets[2]["key"], "btts")
+
+    @patch("predict.utils.cache.set")
+    @patch("predict.utils.cache.get", return_value=None)
+    @patch("predict.utils._get_json")
+    def test_fallback_supplements_missing_primary_fixtures(self, get_json, cache_get, cache_set):
+        primary_event = {
+            "home_team": "Arsenal",
+            "away_team": "Chelsea",
+            "bookmakers": [{"title": "Primary", "markets": []}],
+        }
+        fallback_payload = {
+            "errors": [],
+            "response": [
+                {
+                    "fixture": {"id": 1},
+                    "teams": {"home": {"name": "Arsenal FC"}, "away": {"name": "Chelsea"}},
+                    "bookmakers": [{"name": "Fallback", "bets": []}],
+                },
+                {
+                    "fixture": {"id": 2},
+                    "teams": {"home": {"name": "Liverpool"}, "away": {"name": "Everton"}},
+                    "bookmakers": [{"name": "Fallback", "bets": []}],
+                },
+            ],
+        }
+        get_json.side_effect = [[primary_event], fallback_payload]
+
+        with patch("predict.utils.APIFOOTBALL_API_KEY", "fallback-key"), patch(
+            "predict.utils.ODDS_PROVIDER", "the-odds-api"
+        ):
+            result = fetch_odds_for_date(
+                "primary-key",
+                match_date="2026-11-21",
+            )
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["bookmakers"][0]["title"], "Primary")
+        self.assertEqual(result[1]["home_team"], "Liverpool")
+        self.assertEqual(get_json.call_count, 2)
+        cache_set.assert_called_once()
 
     def test_ignores_empty_or_invalid_provider_responses(self):
         self.assertEqual(_normalize_apifootball_odds(None), [])
