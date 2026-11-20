@@ -70,8 +70,7 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
     training_entries = len(df) if df is not None else 0
     if df is None or df.empty:
         result = {"competition": competition_code, "status": "no_training_data", "training_entries": training_entries, "fixture_count": 0, "saved_predictions": 0, "dates_checked": match_dates_to_use}
-        logger.warning("PREDICTION_COVERAGE %s", result)
-        return result
+        return record(result)
 
     model_bundle = get_or_train_model_bundle(competition_code)
     if model_bundle is None:
