@@ -51,6 +51,35 @@ class FootballLogoCatalogTests(SimpleTestCase):
                 metadata = get_team_metadata("Unknown FC", "TUR")
         self.assertEqual(metadata["crest"], "https://flagcdn.com/w160/tr.png")
 
+    def test_cached_flag_does_not_hide_a_provider_crest(self):
+        provider_crest = "https://provider.example/club.png"
+        cached = {
+            "shortName": "Unknown FC",
+            "crest": "https://flagcdn.com/w160/tr.png",
+            "provider_crest": provider_crest,
+            "logo_source": "competition-country-flag",
+        }
+        with patch("predict.constants.cache.get", return_value=cached):
+            with patch("predict.constants.get_football_team_logo_url", return_value=None):
+                with patch("predict.constants.cache.set"):
+                    metadata = get_team_metadata("Unknown FC", "TUR")
+        self.assertEqual(metadata["crest"], provider_crest)
+        self.assertEqual(metadata["logo_source"], "provider")
+
+    def test_catalogue_is_checked_even_when_a_flag_is_cached(self):
+        catalogue_logo = "https://assets.football-logos.cc/logos/turkey/512x512/club.hash.png"
+        cached = {
+            "shortName": "Known Club",
+            "crest": "https://flagcdn.com/w160/tr.png",
+            "logo_source": "competition-country-flag",
+        }
+        with patch("predict.constants.cache.get", return_value=cached):
+            with patch("predict.constants.get_football_team_logo_url", return_value=catalogue_logo):
+                with patch("predict.constants.cache.set"):
+                    metadata = get_team_metadata("Known Club", "TUR")
+        self.assertEqual(metadata["crest"], catalogue_logo)
+        self.assertEqual(metadata["logo_source"], "football-logos.cc")
+
     def test_ambiguous_global_team_name_is_not_guessed(self):
         self.assertIsNone(get_football_team_logo_url("Atlas", "CL"))
 
