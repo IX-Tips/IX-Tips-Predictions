@@ -89,7 +89,7 @@ class PredictionsWindowAndLeagueFilterTests(TestCase):
         context = self.get_context({"match_date": past_day.isoformat()})
 
         self.assertEqual(context["selected_date"], past_day.isoformat())
-        self.assertEqual([row["home_team"] for row in context["predictions"]], ["historic Home"])
+        self.assertEqual([row["home_team"] for row in context["predictions"]], ["Historic Home"])
 
 
     def test_default_date_prefers_nearest_upcoming_over_old_history(self):
