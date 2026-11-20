@@ -563,26 +563,55 @@ def get_football_competition_logo_url(competition_code):
     return _football_logo_url(country_slug, item) if item else None
 
 
+def _is_country_flag_url(url):
+    return str(url or "").startswith("https://flagcdn.com/")
+
+
 def get_team_metadata(name, competition_code=None):
     key = team_meta_cache_key(name)
     meta = cache.get(key, {"shortName": name, "crest": "", "competition": competition_code})
     fallback_competition = competition_code or meta.get("competition")
 
-    # Prefer a verified bundled-catalog match over old provider crest URLs.
-    # Several provider crest endpoints are incomplete or return broken images.
+    # A previous request may have cached a country flag in "crest". Preserve
+    # real provider crests separately so a cached flag never masks them.
+    cached_crest = meta.get("crest")
+    provider_crest = meta.get("provider_crest")
+    if cached_crest and not _is_country_flag_url(cached_crest):
+        provider_crest = provider_crest or cached_crest
+
+    # Always check the bundled club catalogue before accepting any fallback.
     team_logo = get_football_team_logo_url(name, fallback_competition)
+    if not team_logo and meta.get("shortName") and meta.get("shortName") != name:
+        team_logo = get_football_team_logo_url(meta["shortName"], fallback_competition)
     if team_logo:
-        if meta.get("crest") != team_logo or meta.get("logo_source") != "football-logos.cc":
-            meta = {**meta, "crest": team_logo, "logo_source": "football-logos.cc"}
-            cache.set(key, meta, timeout=TEAM_METADATA_CACHE_TIMEOUT)
+        meta = {
+            **meta,
+            "crest": team_logo,
+            "logo_source": "football-logos.cc",
+        }
+        cache.set(key, meta, timeout=TEAM_METADATA_CACHE_TIMEOUT)
         return meta
 
-    if meta.get("crest"):
+    # Provider badge is the second choice. Never mistake a cached flag for one.
+    if provider_crest and not _is_country_flag_url(provider_crest):
+        meta = {
+            **meta,
+            "crest": provider_crest,
+            "provider_crest": provider_crest,
+            "logo_source": meta.get("logo_source") if meta.get("logo_source") not in (
+                None, "competition-country-flag", "football-logos.cc"
+            ) else "provider",
+        }
+        cache.set(key, meta, timeout=TEAM_METADATA_CACHE_TIMEOUT)
         return meta
 
-    # If no verified club logo matches, use the competition country flag.
+    # Country flag is strictly the final fallback when no club badge exists.
     flag = country_flag_url(fallback_competition) if fallback_competition else None
     if flag:
-        meta = {**meta, "crest": flag, "logo_source": "competition-country-flag"}
+        meta = {
+            **meta,
+            "crest": flag,
+            "logo_source": "competition-country-flag",
+        }
         cache.set(key, meta, timeout=TEAM_METADATA_CACHE_TIMEOUT)
     return meta
