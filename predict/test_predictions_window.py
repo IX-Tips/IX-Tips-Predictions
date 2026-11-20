@@ -6,6 +6,7 @@ from django.test import RequestFactory, TestCase
 
 from predict.models import MatchPrediction, TopPick
 from predict.views import predictions_view
+from predict.utils import save_predictions, _build_feature_row, _new_team_profile, _update_team_profile
 
 
 class PredictionsWindowAndLeagueFilterTests(TestCase):
@@ -127,6 +128,56 @@ class PredictionsWindowAndLeagueFilterTests(TestCase):
         self.assertEqual(context["predictions"][0]["predicted_home_goals"], 2)
         first.refresh_from_db()
         self.assertEqual(first.predicted_home_goals, 2)
+
+    def test_scheduled_prediction_reuses_fixture_across_provider_ids_and_aliases(self):
+        day = self.today + timedelta(days=1)
+        matches = [
+            {
+                "id": 101, "utcDate": f"{day.isoformat()}T15:30:00Z",
+                "homeTeam": {"name": "Manchester City"},
+                "awayTeam": {"name": "Fulham FC"},
+                "predicted_home_goals": 2, "predicted_away_goals": 0,
+            },
+            {
+                "id": 909, "utcDate": f"{day.isoformat()}T15:30:00Z",
+                "homeTeam": {"name": "Man City"},
+                "awayTeam": {"name": "Fulham"},
+                "predicted_home_goals": 1, "predicted_away_goals": 1,
+            },
+        ]
+
+        saved = save_predictions(
+            matches, match_date=day.isoformat(), competition_code="PL",
+        )
+
+        self.assertEqual(len(MatchPrediction.objects.filter(match_date=day, competition="PL")), 1)
+        self.assertEqual(len(saved), 2)
+        self.assertEqual(saved[0].pk, saved[1].pk)
+        self.assertEqual(saved[0].predicted_home_goals, 2)
+
+    def test_feature_builder_resolves_team_and_h2h_profiles_by_alias(self):
+        profiles = {"Manchester City": _new_team_profile()}
+        _update_team_profile(profiles["Manchester City"], 2, 0, "home", self.today)
+        h2h = {
+            tuple(sorted(("Manchester City", "Fulham"))): [{
+                "home_team": "Manchester City",
+                "away_team": "Fulham",
+                "home_goals": 3,
+                "away_goals": 1,
+            }]
+        }
+
+        row = _build_feature_row(
+            "Man City", "Fulham",
+            profiles, h2h,
+            {"home_goals": 1.5, "away_goals": 1.0},
+            8, None,
+            {"Manchester City": 1710, "Fulham": 1500},
+        )
+
+        self.assertGreater(row["home_recent_scored"], 1.5)
+        self.assertEqual(row["elo_gap"], 210)
+        self.assertEqual(row["h2h_match_count"], 1)
 
     def test_sidebar_reads_only_the_default_stored_top_pick_variant(self):
         self.add_prediction("premier", "PL", self.today)
