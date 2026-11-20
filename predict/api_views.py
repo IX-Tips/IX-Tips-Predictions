@@ -3,8 +3,9 @@ IX-Tips REST API — v1
 All endpoints consumed by the Flutter mobile app.
 """
 from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
@@ -134,6 +135,7 @@ def api_competitions(request):
 
 
 @api_view(["GET"])
+@authentication_classes([SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def api_competition_teams(request):
     """
