@@ -20,6 +20,7 @@ from sklearn.preprocessing import LabelEncoder
 
 from .constants import (
     API_TOKEN,
+    FOOTBALL_TEAM_LOGO_ALIASES,
     BASE_URL,
     COMPETITIONS,
     MODEL_CACHE_TIMEOUT,
@@ -434,16 +435,20 @@ def _normalize_team_lookup_value(name):
     candidate = re.sub(r"[^\w\s]", " ", candidate)
     candidate = re.sub(r"\b(fc|cf|ac|sc|afc|club|de|da|del)\b", " ", candidate)
     candidate = re.sub(r"\s+", " ", candidate).strip()
+    # Keep training-history lookups aligned with the same explicit provider
+    # aliases used by the logo catalogue. This avoids treating one club as two
+    # different teams when fixture and results providers use different names.
     aliases = {
-        "man city": "manchester city",
-        "man utd": "manchester united",
+        **FOOTBALL_TEAM_LOGO_ALIASES,
+        "manchester utd": "manchester united",
         "brighton and hove albion": "brighton",
         "brighton hove albion": "brighton",
-        "spurs": "tottenham",
-        "tottenham hotspur": "tottenham",
-        "wolves": "wolverhampton wanderers",
         "celta vigo": "celta",
-        "athletic bilbao": "athletic",
+        "athletic club": "athletic bilbao",
+        "royal charleroi s c": "royal charleroi s c",
+        "sporting lisbon": "sporting cp",
+        "olympique marseille": "marseille",
+        "olympique lyon": "lyon",
         "barca": "barcelona",
         "atleti": "atletico madrid",
     }
