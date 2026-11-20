@@ -26,11 +26,17 @@ class FootballLogoCatalogTests(SimpleTestCase):
             with self.subTest(competition_code=competition_code):
                 self.assertIsNotNone(get_football_competition_logo_url(competition_code))
 
-    def test_preserves_provider_crest_before_catalog_fallback(self):
+    def test_catalog_logo_replaces_stale_provider_crest(self):
         provider_crest = "https://provider.example/crest.png"
         with patch("predict.constants.cache.get", return_value={"shortName": "Liverpool", "crest": provider_crest}):
-            metadata = get_team_metadata("Liverpool FC", "PL")
-        self.assertEqual(metadata["crest"], provider_crest)
+            with patch("predict.constants.cache.set"):
+                metadata = get_team_metadata("Liverpool FC", "PL")
+        self.assertTrue(metadata["crest"].startswith("https://assets.football-logos.cc/logos/england/256x256/liverpool."))
+        self.assertEqual(metadata["logo_source"], "football-logos.cc")
+
+    def test_resolves_common_provider_aliases(self):
+        url = get_football_team_logo_url("Man City", "PL")
+        self.assertTrue(url.startswith("https://assets.football-logos.cc/logos/england/256x256/manchester-city."))
 
     def test_uses_catalog_team_logo_when_provider_has_no_crest(self):
         with patch("predict.constants.cache.get", return_value={"shortName": "Liverpool FC", "crest": None}):

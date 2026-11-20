@@ -5,7 +5,8 @@ from django.http import HttpResponse
 from django.test import RequestFactory, TestCase
 
 from predict.models import MatchPrediction, TopPick
-from predict.views import predictions_view
+from predict.views import predictions_view, build_match_detail_context
+from predict.utils import save_predictions, _build_feature_row, _new_team_profile, _update_team_profile
 
 
 class PredictionsWindowAndLeagueFilterTests(TestCase):
@@ -80,6 +81,14 @@ class PredictionsWindowAndLeagueFilterTests(TestCase):
         )
         self.assertEqual(context["selected_competition"], "")
         self.assertGreaterEqual(len(context["competition_options"]), 3)
+        self.assertEqual(
+            [group["competition_code"] for group in context["league_groups"]],
+            ["PL", "CL", "PD"],
+        )
+        self.assertEqual(
+            [len(group["matches"]) for group in context["league_groups"]],
+            [1, 1, 1],
+        )
 
 
     def test_past_dates_remain_selectable(self):
@@ -127,6 +136,80 @@ class PredictionsWindowAndLeagueFilterTests(TestCase):
         self.assertEqual(context["predictions"][0]["predicted_home_goals"], 2)
         first.refresh_from_db()
         self.assertEqual(first.predicted_home_goals, 2)
+
+    def test_scheduled_prediction_reuses_fixture_across_provider_ids_and_aliases(self):
+        day = self.today + timedelta(days=1)
+        matches = [
+            {
+                "id": 101, "utcDate": f"{day.isoformat()}T15:30:00Z",
+                "homeTeam": {"name": "Manchester City"},
+                "awayTeam": {"name": "Fulham FC"},
+                "predicted_home_goals": 2, "predicted_away_goals": 0,
+            },
+            {
+                "id": 909, "utcDate": f"{day.isoformat()}T15:30:00Z",
+                "homeTeam": {"name": "Man City"},
+                "awayTeam": {"name": "Fulham"},
+                "predicted_home_goals": 1, "predicted_away_goals": 1,
+            },
+        ]
+
+        saved = save_predictions(
+            matches, match_date=day.isoformat(), competition_code="PL",
+        )
+
+        self.assertEqual(len(MatchPrediction.objects.filter(match_date=day, competition="PL")), 1)
+        self.assertEqual(len(saved), 2)
+        self.assertEqual(saved[0].pk, saved[1].pk)
+        self.assertEqual(saved[0].predicted_home_goals, 2)
+
+    def test_feature_builder_resolves_team_and_h2h_profiles_by_alias(self):
+        profiles = {"Manchester City": _new_team_profile()}
+        _update_team_profile(profiles["Manchester City"], 2, 0, "home", self.today)
+        h2h = {
+            tuple(sorted(("Manchester City", "Fulham"))): [{
+                "home_team": "Manchester City",
+                "away_team": "Fulham",
+                "home_goals": 3,
+                "away_goals": 1,
+            }]
+        }
+
+        row = _build_feature_row(
+            "Man City", "Fulham",
+            profiles, h2h,
+            {"home_goals": 1.5, "away_goals": 1.0},
+            8, None,
+            {"Manchester City": 1710, "Fulham": 1500},
+        )
+
+        self.assertGreater(row["home_recent_scored"], 1.5)
+        self.assertEqual(row["elo_gap"], 210)
+        self.assertEqual(row["h2h_match_count"], 1)
+
+    def test_match_detail_survives_missing_market_and_scorer_features(self):
+        prediction = MatchPrediction.objects.create(
+            match_id="detail-safe-1",
+            home_team="Man City",
+            away_team="Fulham",
+            match_date=self.today + timedelta(days=1),
+            competition="PL",
+            predicted_home_goals=2,
+            predicted_away_goals=0,
+            predicted_home_rate=1.8,
+            predicted_away_rate=0.7,
+        )
+        with patch("predict.views.get_team_metadata", side_effect=lambda name, code=None: {"shortName": name, "crest": ""}):
+            with patch("predict.views._build_market_rows", side_effect=RuntimeError("missing model features")):
+                with patch("predict.views._build_match_scorer_angle", side_effect=RuntimeError("scorer feed unavailable")):
+                    with patch("predict.views.resolve_competition_logo", return_value=""):
+                        with patch("predict.views.get_cached_kickoff_time", return_value="15:30"):
+                            context = build_match_detail_context(prediction)
+
+        self.assertEqual(context["predicted_score"], "2 - 0")
+        self.assertEqual(context["market_rows"], [])
+        self.assertIsNone(context["scorer_row"])
+        self.assertEqual(context["feature_snapshot"]["elo_gap"], 0.0)
 
     def test_sidebar_reads_only_the_default_stored_top_pick_variant(self):
         self.add_prediction("premier", "PL", self.today)

@@ -434,7 +434,20 @@ def _normalize_team_lookup_value(name):
     candidate = re.sub(r"[^\w\s]", " ", candidate)
     candidate = re.sub(r"\b(fc|cf|ac|sc|afc|club|de|da|del)\b", " ", candidate)
     candidate = re.sub(r"\s+", " ", candidate).strip()
-    return candidate
+    aliases = {
+        "man city": "manchester city",
+        "man utd": "manchester united",
+        "brighton and hove albion": "brighton",
+        "brighton hove albion": "brighton",
+        "spurs": "tottenham",
+        "tottenham hotspur": "tottenham",
+        "wolves": "wolverhampton wanderers",
+        "celta vigo": "celta",
+        "athletic bilbao": "athletic",
+        "barca": "barcelona",
+        "atleti": "atletico madrid",
+    }
+    return aliases.get(candidate, candidate)
 
 
 def _team_name_aliases(name):
@@ -1013,7 +1026,7 @@ def _summarize_head_to_head(home_team, away_team, h2h_matches, lookback, default
     btts_count = 0
     over25_count = 0
     for match in recent_matches:
-        if match["home_team"] == home_team:
+        if _normalize_team_lookup_value(match["home_team"]) == _normalize_team_lookup_value(home_team):
             home_goals = float(match["home_goals"])
             away_goals = float(match["away_goals"])
         else:
@@ -1066,13 +1079,27 @@ def _safe_implied(odds_val):
         return 0.0
 
 
+def _lookup_normalized_team_value(mapping, team_name, default=None):
+    """Resolve historical team-profile keys across provider naming variants."""
+    target = _normalize_team_lookup_value(team_name)
+    if not target:
+        return default
+    direct = mapping.get(team_name)
+    if direct is not None:
+        return direct
+    for stored_name, value in mapping.items():
+        if _normalize_team_lookup_value(stored_name) == target:
+            return value
+    return default
+
+
 def _build_feature_row(home_team, away_team, team_profiles, h2h_profiles, league_defaults,
                        lookback, current_date, elo_ratings=None, odds_row=None):
-    home_profile = team_profiles.get(home_team, _new_team_profile())
-    away_profile = team_profiles.get(away_team, _new_team_profile())
+    home_profile = _lookup_normalized_team_value(team_profiles, home_team, _new_team_profile())
+    away_profile = _lookup_normalized_team_value(team_profiles, away_team, _new_team_profile())
     elo_ratings = elo_ratings or {}
-    home_elo = float(elo_ratings.get(home_team, 1500.0))
-    away_elo = float(elo_ratings.get(away_team, 1500.0))
+    home_elo = float(_lookup_normalized_team_value(elo_ratings, home_team, 1500.0))
+    away_elo = float(_lookup_normalized_team_value(elo_ratings, away_team, 1500.0))
     home_summary = _summarize_profile(
         home_profile,
         venue="home",
@@ -1101,10 +1128,19 @@ def _build_feature_row(home_team, away_team, team_profiles, h2h_profiles, league
     away_season = _summarize_profile(away_profile, "away", 20,
         league_defaults["away_goals"], league_defaults["home_goals"], 1.1, current_date)
 
+    normalized_pair = tuple(sorted((
+        _normalize_team_lookup_value(home_team),
+        _normalize_team_lookup_value(away_team),
+    )))
+    h2h_matches = []
+    for stored_pair, stored_matches in h2h_profiles.items():
+        if tuple(sorted(_normalize_team_lookup_value(team) for team in stored_pair)) == normalized_pair:
+            h2h_matches = stored_matches
+            break
     h2h_summary = _summarize_head_to_head(
         home_team,
         away_team,
-        h2h_profiles.get(tuple(sorted((home_team, away_team))), []),
+        h2h_matches,
         lookback=max(3, min(lookback, 5)),
         default_total_goals=league_defaults["home_goals"] + league_defaults["away_goals"],
     )
@@ -2005,6 +2041,19 @@ except Exception:
     SlipBatch = None
 
 
+def canonical_fixture_match_id(competition_code, match_date, home_team, away_team):
+    """Stable DB identity for one fixture, independent of provider match IDs."""
+    import hashlib
+
+    identity = "|".join((
+        str(competition_code or "").strip().casefold(),
+        str(match_date or "")[:10],
+        _normalize_team_lookup_value(home_team),
+        _normalize_team_lookup_value(away_team),
+    ))
+    return "fx:" + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:46]
+
+
 def save_predictions(matches, model_home=None, model_away=None, le=None, match_date=None, competition_code=None, actual_result_map=None):
     """
     Backwards-compatible save_predictions used by your tasks.py:
@@ -2023,17 +2072,25 @@ def save_predictions(matches, model_home=None, model_away=None, le=None, match_d
         try:
             home = match["homeTeam"]["name"]
             away = match["awayTeam"]["name"]
-            match_id = match.get("id", None)
             utc = match.get("utcDate", None)
             mdate = match_date or (utc[:10] if utc else None)
+            competition = competition_code or match.get("competition")
+            canonical_id = canonical_fixture_match_id(competition, mdate, home, away)
 
-            # A fixture receives one immutable pre-match forecast. Scheduled
-            # refreshes may revisit the same fixture as provider feeds change,
-            # but they must not silently replace the original prediction or
-            # spend CPU running inference again. Match status and final scores
-            # are refreshed independently by the status-poll task.
-            if use_db and match_id:
-                existing = MatchPrediction.objects.filter(match_id=match_id).first()
+            # Resolve legacy rows by fixture identity before running inference.
+            # Provider-specific IDs must never create a second prediction row.
+            if use_db:
+                existing = MatchPrediction.objects.filter(
+                    competition=competition,
+                    match_date=mdate,
+                ).order_by("pk")
+                normalized_home = _normalize_team_lookup_value(home)
+                normalized_away = _normalize_team_lookup_value(away)
+                existing = next((
+                    row for row in existing
+                    if _normalize_team_lookup_value(row.home_team) == normalized_home
+                    and _normalize_team_lookup_value(row.away_team) == normalized_away
+                ), None)
                 if existing:
                     saved.append(existing)
                     continue
@@ -2103,10 +2160,10 @@ def save_predictions(matches, model_home=None, model_away=None, le=None, match_d
                 # get_or_create protects the first forecast if duplicate
                 # scheduled jobs race after the initial existence check.
                 obj, created = MatchPrediction.objects.get_or_create(
-                    match_id=match_id,
+                    match_id=canonical_id,
                     defaults={
                         "match_date": mdate,
-                        "competition": competition_code or match.get("competition", None),
+                        "competition": competition,
                         "home_team": home,
                         "away_team": away,
                         "predicted_home_goals": predicted_home_goals,
@@ -2145,7 +2202,7 @@ def save_predictions(matches, model_home=None, model_away=None, le=None, match_d
             else:
                 # return dict representation (helpful in tests)
                 saved.append({
-                    "match_id": match_id,
+                    "match_id": canonical_id,
                     "match_date": mdate,
                     "competition": competition_code or match.get("competition"),
                     "home_team": home,

@@ -346,16 +346,15 @@
       <div class="grid-col col-12 text-center text-muted">No predictions available for the selected date.</div>
     </div>
   {% else %}
-    {% regroup predictions by competition_code as league_groups %}
     {% for league in league_groups %}
     <div class="league-group-heading">
-      {% if league.list.0.competition_logo %}
-        <img src="{{ league.list.0.competition_logo }}" alt="" loading="lazy">
+      {% if league.competition_logo %}
+        <img src="{{ league.competition_logo }}" alt="" loading="lazy">
       {% endif %}
-      <span>{{ league.list.0.competition_name }}</span>
-      <small>{{ league.list|length }} match{{ league.list|length|pluralize }}</small>
+      <span>{{ league.competition_name }}</span>
+      <small>{{ league.matches|length }} match{{ league.matches|length|pluralize }}</small>
     </div>
-    {% for match in league.list %}
+    {% for match in league.matches %}
     <div class="grid-row">
       <div class="grid-col date-time">
         <div class="time">{{ match.match_time }}</div>
