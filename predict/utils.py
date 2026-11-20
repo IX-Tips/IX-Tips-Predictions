@@ -1026,7 +1026,7 @@ def _summarize_head_to_head(home_team, away_team, h2h_matches, lookback, default
     btts_count = 0
     over25_count = 0
     for match in recent_matches:
-        if match["home_team"] == home_team:
+        if _normalize_team_lookup_value(match["home_team"]) == _normalize_team_lookup_value(home_team):
             home_goals = float(match["home_goals"])
             away_goals = float(match["away_goals"])
         else:
@@ -1079,13 +1079,27 @@ def _safe_implied(odds_val):
         return 0.0
 
 
+def _lookup_normalized_team_value(mapping, team_name, default=None):
+    """Resolve historical team-profile keys across provider naming variants."""
+    target = _normalize_team_lookup_value(team_name)
+    if not target:
+        return default
+    direct = mapping.get(team_name)
+    if direct is not None:
+        return direct
+    for stored_name, value in mapping.items():
+        if _normalize_team_lookup_value(stored_name) == target:
+            return value
+    return default
+
+
 def _build_feature_row(home_team, away_team, team_profiles, h2h_profiles, league_defaults,
                        lookback, current_date, elo_ratings=None, odds_row=None):
-    home_profile = team_profiles.get(home_team, _new_team_profile())
-    away_profile = team_profiles.get(away_team, _new_team_profile())
+    home_profile = _lookup_normalized_team_value(team_profiles, home_team, _new_team_profile())
+    away_profile = _lookup_normalized_team_value(team_profiles, away_team, _new_team_profile())
     elo_ratings = elo_ratings or {}
-    home_elo = float(elo_ratings.get(home_team, 1500.0))
-    away_elo = float(elo_ratings.get(away_team, 1500.0))
+    home_elo = float(_lookup_normalized_team_value(elo_ratings, home_team, 1500.0))
+    away_elo = float(_lookup_normalized_team_value(elo_ratings, away_team, 1500.0))
     home_summary = _summarize_profile(
         home_profile,
         venue="home",
@@ -1114,10 +1128,19 @@ def _build_feature_row(home_team, away_team, team_profiles, h2h_profiles, league
     away_season = _summarize_profile(away_profile, "away", 20,
         league_defaults["away_goals"], league_defaults["home_goals"], 1.1, current_date)
 
+    normalized_pair = tuple(sorted((
+        _normalize_team_lookup_value(home_team),
+        _normalize_team_lookup_value(away_team),
+    )))
+    h2h_matches = []
+    for stored_pair, stored_matches in h2h_profiles.items():
+        if tuple(sorted(_normalize_team_lookup_value(team) for team in stored_pair)) == normalized_pair:
+            h2h_matches = stored_matches
+            break
     h2h_summary = _summarize_head_to_head(
         home_team,
         away_team,
-        h2h_profiles.get(tuple(sorted((home_team, away_team))), []),
+        h2h_matches,
         lookback=max(3, min(lookback, 5)),
         default_total_goals=league_defaults["home_goals"] + league_defaults["away_goals"],
     )
