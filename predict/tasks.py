@@ -20,6 +20,7 @@ from .utils import (
     get_top_predictions_for_variant,
     _collect_top_pick_candidates,
     save_predictions,
+    canonical_fixture_match_id,
     store_top_pick_for_date
 )
 
@@ -52,14 +53,6 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
     from .views import refresh_competition_odds
 
     logger.info("Running prediction for %s on %s", competition_code, match_date or "auto")
-    # A recent successful automatic run is reusable; avoid fixture-provider,
-    # model and inference work on every scheduler cycle. Explicit dates bypass it.
-    prediction_cooldown_key = f"prediction_pipeline_success::{competition_code}"
-    if not match_date:
-        recent_success = cache.get(prediction_cooldown_key)
-        if recent_success:
-            logger.info("Skipping %s: recent successful prediction run", competition_code)
-            return {**recent_success, "status": "skipped_recent_success"}
     if not match_date:
         fixtures_by_date = fetch_upcoming_fixture_groups(
             None, competition_code, days_ahead=7,
@@ -69,6 +62,33 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
             str(match_date)[:10]: fetch_fixture_matches_by_date(None, competition_code, match_date)
         }
     match_dates_to_use = sorted(fixtures_by_date)
+    # Deduplicate at fixture level: only fixtures without a saved prediction
+    # proceed to model loading/training and inference.
+    pending_by_date = {}
+    existing_ids = set(
+        MatchPrediction.objects.filter(
+            competition=competition_code,
+            match_date__in=match_dates_to_use,
+        ).values_list("match_id", flat=True)
+    )
+    for fixture_day, fixtures in fixtures_by_date.items():
+        pending = []
+        for fixture in fixtures:
+            home = (fixture.get("homeTeam") or {}).get("name")
+            away = (fixture.get("awayTeam") or {}).get("name")
+            if not home or not away:
+                continue
+            fixture_id = canonical_fixture_match_id(competition_code, fixture_day, home, away)
+            if fixture_id not in existing_ids:
+                pending.append(fixture)
+        if pending:
+            pending_by_date[fixture_day] = pending
+    fixtures_by_date = pending_by_date
+    match_dates_to_use = sorted(fixtures_by_date)
+    if not match_dates_to_use:
+        result = {"competition": competition_code, "status": "already_covered", "training_entries": 0, "fixture_count": 0, "saved_predictions": 0, "dates_checked": []}
+        logger.info("PREDICTION_COVERAGE %s", result)
+        return result
 
     if not match_dates_to_use:
         result = {"competition": competition_code, "status": "no_fixtures", "training_entries": 0, "fixture_count": 0, "saved_predictions": 0, "dates_checked": []}
@@ -126,8 +146,6 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
         "dates_with_fixtures": dates_with_fixtures,
     }
     logger.info("PREDICTION_COVERAGE %s", result)
-    if result["status"] == "generated" and not match_date:
-        cache.set(prediction_cooldown_key, result, timeout=60 * 60 * 3)
     return result
 
 @shared_task
