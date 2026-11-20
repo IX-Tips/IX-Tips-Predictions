@@ -629,7 +629,10 @@ def live_predictions_by_date(request):
                                 "predicted_away_goals": pred_away,
                                 "predicted_home_rate": rate_h,
                                 "predicted_away_rate": rate_a,
-                                "predicted_result": result_label,
+                                "predicted_result": (
+                                    "Home" if pred_home > pred_away
+                                    else "Away" if pred_home < pred_away else "Draw"
+                                ),
                             },
                         )
                         if odds:
