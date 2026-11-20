@@ -1063,9 +1063,24 @@ def build_market_pick_rows(group_key=None, market_name=None, scope_key=None, sor
             selected_code = "PL"
 
     league_table = get_league_table(selected_code)
-    # The scheduled prediction task persists fixture predictions; page rendering
-    # must not trigger a fresh model-backed top-prediction calculation.
-    top_predictions = []
+    # Reuse scheduled TopPick rows for the sidebar instead of recalculating
+    # candidates or invoking model inference during a page request.
+    top_predictions = {}
+    stored_sidebar_picks = TopPick.objects.filter(
+        variant="1", match_date__gte=timezone.localdate()
+    ).order_by("match_date", "-confidence").values(
+        "home_team", "away_team", "tip", "confidence", "match_date", "odds"
+    )[:10]
+    for stored_pick in stored_sidebar_picks:
+        date_key = stored_pick["match_date"].isoformat()
+        top_predictions.setdefault(date_key, []).append({
+            "home_team": stored_pick["home_team"],
+            "away_team": stored_pick["away_team"],
+            "tip": stored_pick["tip"],
+            "confidence": f'{stored_pick["confidence"]:.0f}',
+            "match_date": date_key,
+            "odds": stored_pick["odds"],
+        })
 
     display_data = []
     for p in predictions:
