@@ -2027,6 +2027,17 @@ def save_predictions(matches, model_home=None, model_away=None, le=None, match_d
             utc = match.get("utcDate", None)
             mdate = match_date or (utc[:10] if utc else None)
 
+            # A fixture receives one immutable pre-match forecast. Scheduled
+            # refreshes may revisit the same fixture as provider feeds change,
+            # but they must not silently replace the original prediction or
+            # spend CPU running inference again. Match status and final scores
+            # are refreshed independently by the status-poll task.
+            if use_db and match_id:
+                existing = MatchPrediction.objects.filter(match_id=match_id).first()
+                if existing:
+                    saved.append(existing)
+                    continue
+
             # If models provided: prepare input for prediction
             predicted_home_rate = None
             predicted_away_rate = None
@@ -2083,27 +2094,15 @@ def save_predictions(matches, model_home=None, model_away=None, le=None, match_d
             odds_away = None
 
             if use_db:
-                existing = (
-                    MatchPrediction.objects.filter(match_id=match_id).first()
-                    if match_id else None
-                )
-                # A later fixture/training refresh must never turn a settled
-                # result back into TIMED or replace its final prediction.
-                if existing and existing.status == "FINISHED":
-                    saved.append(existing)
-                    continue
                 incoming_status = match.get("status")
-                if existing:
-                    if incoming_status in {"FINISHED", "AWARDED"}:
-                        saved_status = "FINISHED"
-                    elif existing.status in {"LIVE", "POSTPONED", "SUSPENDED", "CANCELLED"}:
-                        saved_status = existing.status
-                    else:
-                        saved_status = incoming_status or existing.status or "TIMED"
-                else:
-                    saved_status = incoming_status or "TIMED"
+                saved_status = (
+                    "FINISHED" if incoming_status in {"FINISHED", "AWARDED"}
+                    else incoming_status or "TIMED"
+                )
 
-                obj, created = MatchPrediction.objects.update_or_create(
+                # get_or_create protects the first forecast if duplicate
+                # scheduled jobs race after the initial existence check.
+                obj, created = MatchPrediction.objects.get_or_create(
                     match_id=match_id,
                     defaults={
                         "match_date": mdate,
