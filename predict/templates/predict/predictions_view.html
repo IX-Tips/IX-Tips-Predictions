@@ -362,14 +362,14 @@
       </div>
 
       <div class="grid-col competition-info">
-        <img src="{{ match.competition_logo }}" class="comp-logo">
+        <img src="{{ match.competition_logo }}" class="comp-logo" loading="lazy" decoding="async">
         <span class="comp-name">{{ match.competition }}</span>
       </div>
 
       <div class="grid-col match-info">
         <a href="{{ match.detail_url }}" class="match-link">
           <div class="team-display">
-            <img src="{{ match.home_logo }}" class="team-logo">
+            <img src="{{ match.home_logo }}" class="team-logo" loading="lazy" decoding="async">
             <span class="team-name">{{ match.home_team }}</span>
             {% if match.home_form %}
             <span class="form-dots">{% for r in match.home_form %}<span class="form-dot form-{{ r|lower }}">{{ r }}</span>{% endfor %}</span>
@@ -377,7 +377,7 @@
           </div>
           <span class="vs-separator">-</span>
           <div class="team-display">
-            <img src="{{ match.away_logo }}" class="team-logo">
+            <img src="{{ match.away_logo }}" class="team-logo" loading="lazy" decoding="async">
             <span class="team-name">{{ match.away_team }}</span>
             {% if match.away_form %}
             <span class="form-dots">{% for r in match.away_form %}<span class="form-dot form-{{ r|lower }}">{{ r }}</span>{% endfor %}</span>
