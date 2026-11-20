@@ -121,6 +121,55 @@ def api_competitions(request):
     return Response({"competitions": data})
 
 
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def api_competition_teams(request):
+    """
+    GET /api/v1/competition-teams/?competition=PL[&date=YYYY-MM-DD]
+
+    Discover teams from persisted fixtures/predictions. This deliberately does
+    not depend on standings or a provider team-list endpoint: a league can have
+    upcoming fixtures even when its standings feed is empty.
+    """
+    from django.utils.dateparse import parse_date
+
+    competition_code = (request.GET.get("competition") or "").strip().upper()
+    if competition_code not in competitions:
+        return Response(
+            {"detail": "A valid competition code is required.", "teams": []},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    date_value = (request.GET.get("date") or "").strip()
+    selected_date = None
+    if date_value:
+        selected_date = parse_date(date_value)
+        if selected_date is None:
+            return Response(
+                {"detail": "Date must use YYYY-MM-DD format.", "teams": []},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    fixtures = MatchPrediction.objects.filter(competition=competition_code)
+    if selected_date:
+        fixtures = fixtures.filter(match_date=selected_date)
+
+    home_teams = fixtures.values_list("home_team", flat=True)
+    away_teams = fixtures.values_list("away_team", flat=True)
+    teams = sorted(
+        {name.strip() for name in list(home_teams) + list(away_teams) if name and name.strip()},
+        key=str.casefold,
+    )
+    return Response({
+        "competition": competition_code,
+        "date": selected_date.isoformat() if selected_date else None,
+        "source": "match_predictions",
+        "fixture_count": fixtures.count(),
+        "team_count": len(teams),
+        "teams": [{"name": name} for name in teams],
+    })
+
 # ── Predictions ───────────────────────────────────────────────────────────────
 
 @api_view(["GET"])

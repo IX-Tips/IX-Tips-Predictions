@@ -8,6 +8,7 @@ urlpatterns = [
 
     # Meta
     path("competitions/", api_views.api_competitions, name="api_competitions"),
+    path("competition-teams/", api_views.api_competition_teams, name="api_competition_teams"),
     path("summary/", api_views.api_summary, name="api_summary"),
 
     # Predictions
