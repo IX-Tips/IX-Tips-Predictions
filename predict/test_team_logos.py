@@ -132,7 +132,7 @@ class TeamLogoDashboardTests(TestCase):
         self.assertIn("Arsenal", rendered)
         self.assertIn("catalog-crest.png", rendered)
         self.assertIn("provider-crest.png", rendered)
-        self.assertIn("Source: catalogue", rendered)
+        self.assertIn('Source: <span class="js-logo-source">catalogue</span>', rendered)
         self.assertIn('data-provider-crest="provider-crest.png"', rendered)
         self.assertIn("image fallback", rendered)
 
