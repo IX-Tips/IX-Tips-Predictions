@@ -31,13 +31,14 @@ competitions = COMPETITIONS
 
 
 def _team_logo(team_name, competition_code, metadata=None):
-    """Prefer provider crest, then the local club-logo catalogue, then league flag."""
+    """Prefer a catalogue badge, then provider crest, then the competition flag."""
     metadata = metadata or {}
-    return (
-        metadata.get("crest")
-        or get_football_team_logo_url(team_name, competition_code)
-        or country_flag_url(competition_code)
-    )
+    catalogue_logo = get_football_team_logo_url(team_name, competition_code)
+    if not catalogue_logo and metadata.get("shortName"):
+        catalogue_logo = get_football_team_logo_url(
+            metadata["shortName"], competition_code
+        )
+    return catalogue_logo or metadata.get("crest") or country_flag_url(competition_code)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
