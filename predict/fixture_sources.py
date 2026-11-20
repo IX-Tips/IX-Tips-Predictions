@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+import time
 
 from django.core.cache import cache
 from django.utils import timezone
@@ -263,9 +264,14 @@ def fetch_fixture_matches_by_date(api_key, competition_code, match_date):
             logger.warning("Fixture provider %s not configured for %s: %s", provider, competition_code, reason)
             continue
 
+        provider_started = time.monotonic()
         try:
             matches = _dispatch_explicit_provider(provider, competition_code, match_date)
         except Exception as exc:
+            logger.info(
+                "FIXTURE_PROVIDER_TIMING competition=%s date=%s provider=%s elapsed_seconds=%.3f status=error fixtures=0",
+                competition_code, match_date, provider, time.monotonic() - provider_started,
+            )
             record_provider_diagnostic(
                 competition_code, provider, "error",
                 error=exc, match_date=match_date,
@@ -277,6 +283,10 @@ def fetch_fixture_matches_by_date(api_key, competition_code, match_date):
             continue
 
         valid_count = sum(1 for match in (matches or []) if _fixture_key(match) is not None)
+        logger.info(
+            "FIXTURE_PROVIDER_TIMING competition=%s date=%s provider=%s elapsed_seconds=%.3f status=ok fixtures=%s",
+            competition_code, match_date, provider, time.monotonic() - provider_started, valid_count,
+        )
         request_health = _diagnostic_cache_get("provider_request_health::LF", {}) if provider == "LF" else {}
         recent_lf_error = False
         if request_health.get("status") == "error" and request_health.get("checked_at"):
