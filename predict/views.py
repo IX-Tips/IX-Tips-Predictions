@@ -2801,10 +2801,14 @@ def predictions_view(request):
     if selected_day is None:
         if today in available_dates:
             selected_day = today
-        elif available_dates:
-            selected_day = available_dates[0]
         else:
-            selected_day = today
+            upcoming_dates = [day for day in available_dates if day > today]
+            if upcoming_dates:
+                selected_day = upcoming_dates[0]
+            elif available_dates:
+                selected_day = available_dates[-1]
+            else:
+                selected_day = today
 
     predictions = all_predictions.filter(match_date=selected_day).select_related("odds").order_by("pk")
     if selected_code:
