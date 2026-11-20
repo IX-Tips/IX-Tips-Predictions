@@ -2806,13 +2806,23 @@ def predictions_view(request):
         else:
             selected_day = today
 
-    predictions = all_predictions.filter(match_date=selected_day).select_related("odds")
+    predictions = all_predictions.filter(match_date=selected_day).select_related("odds").order_by("pk")
     if selected_code:
         predictions = predictions.filter(competition__in=selected_competition_values)
 
-    # Stable league-strength ordering first, then kickoff and team names.
+    # Collapse legacy rows created by different provider match IDs into one
+    # visible fixture. Keep the earliest stored snapshot; do not rewrite history.
     display_data = []
+    seen_fixture_keys = set()
     for prediction in predictions:
+        fixture_key = (
+            prediction.competition,
+            normalize_team_lookup_key(prediction.home_team),
+            normalize_team_lookup_key(prediction.away_team),
+        )
+        if fixture_key in seen_fixture_keys:
+            continue
+        seen_fixture_keys.add(fixture_key)
         meta_home = get_team_metadata(prediction.home_team, prediction.competition)
         meta_away = get_team_metadata(prediction.away_team, prediction.competition)
         home_display_name = normalize_display_team_name(
