@@ -174,7 +174,7 @@ def fetch_upcoming_fixture_groups(api_key, competition_code, days_ahead=45):
     # Prediction generation is intentionally capped at seven calendar days.
     # Keep the clamp here as a final guard for every caller.
     bounded_days = min(7, max(1, int(days_ahead)))
-    last_day = today + timedelta(days=bounded_days)
+    last_day = today + timedelta(days=bounded_days - 1)
     primary = get_provider(competition_code)
     bulk_provider = None
     season_matches = []
