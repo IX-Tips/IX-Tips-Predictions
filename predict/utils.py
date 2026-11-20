@@ -434,7 +434,20 @@ def _normalize_team_lookup_value(name):
     candidate = re.sub(r"[^\w\s]", " ", candidate)
     candidate = re.sub(r"\b(fc|cf|ac|sc|afc|club|de|da|del)\b", " ", candidate)
     candidate = re.sub(r"\s+", " ", candidate).strip()
-    return candidate
+    aliases = {
+        "man city": "manchester city",
+        "man utd": "manchester united",
+        "brighton and hove albion": "brighton",
+        "brighton hove albion": "brighton",
+        "spurs": "tottenham",
+        "tottenham hotspur": "tottenham",
+        "wolves": "wolverhampton wanderers",
+        "celta vigo": "celta",
+        "athletic bilbao": "athletic",
+        "barca": "barcelona",
+        "atleti": "atletico madrid",
+    }
+    return aliases.get(candidate, candidate)
 
 
 def _team_name_aliases(name):
@@ -2036,7 +2049,6 @@ def save_predictions(matches, model_home=None, model_away=None, le=None, match_d
         try:
             home = match["homeTeam"]["name"]
             away = match["awayTeam"]["name"]
-            provider_match_id = match.get("id", None)
             utc = match.get("utcDate", None)
             mdate = match_date or (utc[:10] if utc else None)
             competition = competition_code or match.get("competition")
