@@ -1138,9 +1138,21 @@ def _build_feature_row(home_team, away_team, team_profiles, h2h_profiles, league
         _normalize_team_lookup_value(home_team),
         _normalize_team_lookup_value(away_team),
     )))
-    # Both rolling and fallback profile builders store canonical pair keys,
-    # so this remains O(1) even when a competition has thousands of pairings.
-    h2h_matches = h2h_profiles.get(normalized_pair, [])
+    # New model contexts use canonical pair keys (O(1)). Retain a
+    # compatibility path for older/externally supplied contexts whose H2H
+    # keys were stored with provider display names. Newly built profiles
+    # always hit the canonical fast path and never scan the history.
+    h2h_matches = h2h_profiles.get(normalized_pair)
+    if h2h_matches is None:
+        h2h_matches = next(
+            (
+                matches for pair, matches in h2h_profiles.items()
+                if len(pair) == 2
+                and tuple(sorted(_normalize_team_lookup_value(name) for name in pair))
+                == normalized_pair
+            ),
+            [],
+        )
     h2h_summary = _summarize_head_to_head(
         home_team,
         away_team,
@@ -1523,6 +1535,14 @@ def build_training_features(df, lookback=8):
     X = pd.DataFrame(feature_rows, columns=expected_columns).fillna(0)
     y_home = history["home_goals"].astype(float)
     y_away = history["away_goals"].astype(float)
+    # Keep original provider labels available to older consumers that
+    # inspect the Elo snapshot directly. Canonical identities remain the
+    # source of truth for all feature lookups.
+    for team_name in pd.concat([history["home_team"], history["away_team"]]).dropna().unique():
+        canonical_name = _normalize_team_lookup_value(team_name) or team_name
+        if canonical_name in elo_ratings:
+            elo_ratings[team_name] = elo_ratings[canonical_name]
+
     model_context = {
         "history": history[["home_team", "away_team", "home_goals", "away_goals", "utc_date"]].copy(),
         "league_home_goals": league_home_goals,
