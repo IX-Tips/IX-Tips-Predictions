@@ -545,80 +545,122 @@ def live_predictions_by_date(request):
     message = ""
     form = LivePredictionForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        match_date = form.cleaned_data['match_date'].strftime("%Y-%m-%d")
-        competition_code = form.cleaned_data['competition']
+        match_date = form.cleaned_data["match_date"].isoformat()
+        competition_code = form.cleaned_data["competition"]
 
-        matches = fetch_matches_by_date(API_KEY, competition_code, match_date)
+        # Use the same configured multi-provider merger as scheduled predictions.
+        # This keeps the selected competition isolated and reconciles provider IDs
+        # before any inference or persistence happens.
+        from .fixture_sources import fetch_fixture_matches_by_date
+        matches = fetch_fixture_matches_by_date(API_KEY, competition_code, match_date)
         if not matches:
-            message = "No matches found for selected date."
+            message = "No matches found for the selected competition and date."
         else:
             model_bundle = get_or_train_model_bundle(competition_code)
             if model_bundle is None:
-                message = "No training data found for this competition."
+                message = f"No training data or model is available for {competitions.get(competition_code, competition_code)}."
             else:
                 model_home, model_away, model_context = model_bundle
-
                 actual_results = fetch_actual_results(competition_code, match_date)
                 actual_result_map = {
-                    (res['home_team'], res['away_team']): res for res in actual_results
+                    (normalize_team_lookup_key(res["home_team"]), normalize_team_lookup_key(res["away_team"])): res
+                    for res in actual_results
                 }
 
+                seen_fixtures = set()
                 for match in matches:
-                    home = match['homeTeam']['name']
-                    away = match['awayTeam']['name']
-                    match_id = match.get('id')
+                    home = (match.get("homeTeam") or {}).get("name")
+                    away = (match.get("awayTeam") or {}).get("name")
+                    if not home or not away:
+                        continue
+                    fixture_key = (
+                        normalize_team_lookup_key(home),
+                        normalize_team_lookup_key(away),
+                    )
+                    if fixture_key in seen_fixtures:
+                        continue
+                    seen_fixtures.add(fixture_key)
 
                     try:
-                        result_label, pred_home, pred_away, rate_h, rate_a, _ = predict_match_outcome(
+                        # Reuse the existing prediction even when this provider
+                        # assigns a different external match ID. Never overwrite
+                        # the original pre-match forecast on a manual refresh.
+                        existing = None
+                        for candidate in MatchPrediction.objects.filter(
+                            competition=competition_code,
+                            match_date=match_date,
+                        ).order_by("pk"):
+                            if (
+                                normalize_team_lookup_key(candidate.home_team),
+                                normalize_team_lookup_key(candidate.away_team),
+                            ) == fixture_key:
+                                existing = candidate
+                                break
+                        if existing is not None:
+                            predictions.append(existing)
+                            continue
+
+                        result_label, pred_home, pred_away, rate_h, rate_a, calibrated = predict_match_outcome(
                             home, away, (model_home, model_away, model_context),
                         )
-
-                        result = actual_result_map.get((home, away))
-
-                        # Fetch odds using The Odds API fallback
-                        odds = fetch_odds_for_match(match, competition_code)
-
-                        # Persist prediction + odds to DB
-                        prediction, created = MatchPrediction.objects.update_or_create(
-                            match_id=match_id or f"{home}-{away}-{match.get('utcDate','')}",
-                            defaults={
-                                'match_date': match['utcDate'][:10],
-                                'competition': competition_code,
-                                'home_team': home,
-                                'away_team': away,
-                                'predicted_home_goals': pred_home,
-                                'predicted_away_goals': pred_away,
-                                'predicted_home_rate': rate_h,
-                                'predicted_away_rate': rate_a,
-                            }
+                        logger.info(
+                            "LIVE_PREDICTION_DIAGNOSTIC competition=%s home=%s away=%s "
+                            "model_context=%s home_rate=%.4f away_rate=%.4f score=%s-%s calibrated=%s",
+                            competition_code, home, away,
+                            "competition_features" if isinstance(model_context, dict) else type(model_context).__name__,
+                            rate_h, rate_a, pred_home, pred_away, bool(calibrated),
                         )
 
-                        # ✅ Save odds in MatchOdds model
+                        result = actual_result_map.get(fixture_key)
+                        odds = fetch_odds_for_match(match, competition_code)
+                        external_id = match.get("id")
+                        canonical_id = external_id or (
+                            f"{competition_code}:{match_date}:"
+                            f"{fixture_key[0]}:{fixture_key[1]}"
+                        )
+                        prediction, created = MatchPrediction.objects.get_or_create(
+                            match_id=str(canonical_id),
+                            defaults={
+                                "match_date": match_date,
+                                "competition": competition_code,
+                                "home_team": home,
+                                "away_team": away,
+                                "predicted_home_goals": pred_home,
+                                "predicted_away_goals": pred_away,
+                                "predicted_home_rate": rate_h,
+                                "predicted_away_rate": rate_a,
+                                "predicted_result": (
+                                    "Home" if pred_home > pred_away
+                                    else "Away" if pred_home < pred_away else "Draw"
+                                ),
+                            },
+                        )
                         if odds:
                             upsert_match_odds(prediction, odds)
-
-                        
-
                         if result:
-                            prediction.actual_home_goals = result['actual_home_goals']
-                            prediction.actual_away_goals = result['actual_away_goals']
+                            prediction.actual_home_goals = result["actual_home_goals"]
+                            prediction.actual_away_goals = result["actual_away_goals"]
                             prediction.status = "FINISHED"
-                            # mark accuracy
-                            predicted_result = "Home" if pred_home > pred_away else ("Away" if pred_home < pred_away else "Draw")
-                            prediction.is_accurate = (predicted_result == result["actual_result"])
-                        prediction.save()
+                            predicted_result = (
+                                "Home" if pred_home > pred_away
+                                else "Away" if pred_home < pred_away else "Draw"
+                            )
+                            prediction.is_accurate = predicted_result == result["actual_result"]
+                            prediction.save()
                         predictions.append(prediction)
-
-                    except Exception as e:
-                        logger.error(f" Prediction failed for {home} vs {away}: {e}")
-    else:
+                    except Exception:
+                        logger.exception(
+                            "Live prediction failed for %s vs %s in %s",
+                            home, away, competition_code,
+                        )
+    elif request.method != "POST":
         form = LivePredictionForm()
-    # Debug output removed — use logger.debug() if needed
 
     return render(request, "predict/live_predictions.html", {
         "form": form,
         "predictions": predictions,
         "message": message,
+        "selected_competition": form["competition"].value(),
     })
 
 
@@ -2703,14 +2745,12 @@ def auto_track_combo_slip(context, size, market_filter="", style="safe", return_
 def predictions_view(request):
     today = timezone.localdate()
     prediction_window_end = today + timedelta(days=6)
-    window_predictions = MatchPrediction.objects.filter(
-        match_date__range=(today, prediction_window_end),
-    )
+    # Historical snapshots remain browsable; only future selection is bounded.
+    all_predictions = MatchPrediction.objects.all()
 
-    # Build the league selector from competitions that actually have stored
-    # predictions in the visible seven-day window.
+    # Include competitions represented in historical and upcoming snapshots.
     stored_competitions = set(
-        window_predictions.values_list("competition", flat=True).distinct()
+        all_predictions.values_list("competition", flat=True).distinct()
     )
     available_codes = {
         code for code, name in competitions.items()
@@ -2742,7 +2782,7 @@ def predictions_view(request):
         (selected_code, competitions.get(selected_code, selected_code))
         if selected_code else ()
     )
-    date_queryset = window_predictions
+    date_queryset = all_predictions
     if selected_code:
         date_queryset = date_queryset.filter(competition__in=selected_competition_values)
 
@@ -2758,24 +2798,38 @@ def predictions_view(request):
             requested_day = date.fromisoformat(requested_match_date)
         except (TypeError, ValueError):
             requested_day = None
-        if requested_day and today <= requested_day <= prediction_window_end:
+        if requested_day and requested_day <= prediction_window_end:
             selected_day = requested_day
 
     if selected_day is None:
         if today in available_dates:
             selected_day = today
-        elif available_dates:
-            selected_day = available_dates[0]
         else:
-            selected_day = today
+            upcoming_dates = [day for day in available_dates if day > today]
+            if upcoming_dates:
+                selected_day = upcoming_dates[0]
+            elif available_dates:
+                selected_day = available_dates[-1]
+            else:
+                selected_day = today
 
-    predictions = window_predictions.filter(match_date=selected_day).select_related("odds")
+    predictions = all_predictions.filter(match_date=selected_day).select_related("odds").order_by("pk")
     if selected_code:
         predictions = predictions.filter(competition__in=selected_competition_values)
 
-    # Stable league-strength ordering first, then kickoff and team names.
+    # Collapse legacy rows created by different provider match IDs into one
+    # visible fixture. Keep the earliest stored snapshot; do not rewrite history.
     display_data = []
+    seen_fixture_keys = set()
     for prediction in predictions:
+        fixture_key = (
+            prediction.competition,
+            normalize_team_lookup_key(prediction.home_team),
+            normalize_team_lookup_key(prediction.away_team),
+        )
+        if fixture_key in seen_fixture_keys:
+            continue
+        seen_fixture_keys.add(fixture_key)
         meta_home = get_team_metadata(prediction.home_team, prediction.competition)
         meta_away = get_team_metadata(prediction.away_team, prediction.competition)
         home_display_name = normalize_display_team_name(
