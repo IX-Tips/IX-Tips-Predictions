@@ -485,10 +485,39 @@ def _football_logo_url(country_slug, item):
     )
 
 
+# Provider names and UI short names mapped to the catalogue's canonical
+# normalized names. Keep aliases explicit: fuzzy matching can assign the
+# wrong crest to clubs with similar names.
+FOOTBALL_TEAM_LOGO_ALIASES = {
+    "man city": "manchester city",
+    "manchester city fc": "manchester city",
+    "man utd": "manchester united",
+    "manchester united fc": "manchester united",
+    "brighton": "brighton hove albion",
+    "brighton and hove albion": "brighton hove albion",
+    "spurs": "tottenham hotspur",
+    "tottenham": "tottenham hotspur",
+    "wolves": "wolverhampton wanderers",
+    "west ham": "west ham united",
+    "newcastle": "newcastle united",
+    "forest": "nottingham forest",
+    "celta": "celta vigo",
+    "athletic club": "athletic bilbao",
+    "barca": "barcelona",
+    "atleti": "atletico madrid",
+    "inter": "internazionale",
+    "ac milan": "milan",
+    "bayern": "bayern munich",
+    "psg": "paris saint germain",
+    "marseille": "olympique marseille",
+}
+
+
 def get_football_team_logo_url(team_name, competition_code=None):
     key = _normalize_football_logo_name(team_name)
     if not key:
         return None
+    key = FOOTBALL_TEAM_LOGO_ALIASES.get(key, key)
 
     by_country, globally = _football_logo_indexes()
     country_slug = FOOTBALL_LOGO_COUNTRY_BY_COMPETITION.get(competition_code)
@@ -537,21 +566,23 @@ def get_football_competition_logo_url(competition_code):
 def get_team_metadata(name, competition_code=None):
     key = team_meta_cache_key(name)
     meta = cache.get(key, {"shortName": name, "crest": "", "competition": competition_code})
+    fallback_competition = competition_code or meta.get("competition")
+
+    # Prefer a verified bundled-catalog match over old provider crest URLs.
+    # Several provider crest endpoints are incomplete or return broken images.
+    team_logo = get_football_team_logo_url(name, fallback_competition)
+    if team_logo:
+        if meta.get("crest") != team_logo or meta.get("logo_source") != "football-logos.cc":
+            meta = {**meta, "crest": team_logo, "logo_source": "football-logos.cc"}
+            cache.set(key, meta, timeout=TEAM_METADATA_CACHE_TIMEOUT)
+        return meta
+
     if meta.get("crest"):
         return meta
 
-    fallback_competition = competition_code or meta.get("competition")
-    team_logo = get_football_team_logo_url(name, fallback_competition)
-    if team_logo:
-        meta = {**meta, "crest": team_logo, "logo_source": "football-logos.cc"}
-    else:
-        # If no verified club logo matches, use the competition country flag.
-        flag = country_flag_url(fallback_competition) if fallback_competition else None
-        if flag:
-            meta = {**meta, "crest": flag, "logo_source": "competition-country-flag"}
-
-    # Cache the resolved fallback as well, so a missing provider crest does not
-    # trigger the local catalog lookup on every page render.
-    if meta.get("crest"):
+    # If no verified club logo matches, use the competition country flag.
+    flag = country_flag_url(fallback_competition) if fallback_competition else None
+    if flag:
+        meta = {**meta, "crest": flag, "logo_source": "competition-country-flag"}
         cache.set(key, meta, timeout=TEAM_METADATA_CACHE_TIMEOUT)
     return meta
