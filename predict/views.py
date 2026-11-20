@@ -770,12 +770,7 @@ def top_picks_view(request):
             match_key_to_competition[key] = competition_code
             match_key_to_prediction[key] = matched_prediction
 
-        for competition_code, refresh_date in sorted({
-            (competition_code, pick_date)
-            for (pick_date, _, _), competition_code in match_key_to_competition.items()
-            if competition_code and pick_date
-        }):
-            refresh_prediction_statuses(competition_code, refresh_date)
+        # Statuses are refreshed by the scheduled live poll; page reads stay DB-only.
 
     update_actuals_for_top_picks(picks_qs)
 
@@ -2861,39 +2856,20 @@ def build_correct_score_rows(match_date_str=None):
     predictions = predictions.order_by("match_date", "competition", "home_team")
     rows = []
 
-    # Cache model bundles per competition to avoid re-loading for every fixture
-    _model_cache = {}
-
     def _raw_goal_expectations(prediction):
         """
-        Re-run the ML model to get raw float goal expectations (e.g. 1.72, 0.83)
-        instead of the rounded integers stored in the DB (e.g. 2, 1).
-        This produces much more realistic Poisson scoreline distributions.
-        Falls back to the DB integer values if the model isn't available.
+        Use the expected-goal rates saved with the original prediction.
+        Never re-run model inference just because the correct-score page loads.
+        Older rows without rates fall back to their stored integer score.
         """
-        comp_code = prediction.competition
-        if comp_code not in _model_cache:
-            try:
-                bundle = get_or_train_model_bundle(comp_code)
-                _model_cache[comp_code] = bundle
-            except Exception:
-                _model_cache[comp_code] = None
-
-        bundle = _model_cache.get(comp_code)
-        if bundle is None:
-            # Fallback: use DB integers (the old behaviour)
-            return float(prediction.predicted_home_goals or 0), float(prediction.predicted_away_goals or 0)
-
-        model_home, model_away, model_context = bundle
-        try:
-            from .utils import build_fixture_features
-            import numpy as np
-            X = build_fixture_features(prediction.home_team, prediction.away_team, model_context).fillna(0)
-            raw_home = float(np.clip(model_home.predict(X)[0], 0, 10))
-            raw_away = float(np.clip(model_away.predict(X)[0], 0, 10))
-            return raw_home, raw_away
-        except Exception:
-            return float(prediction.predicted_home_goals or 0), float(prediction.predicted_away_goals or 0)
+        home_rate = prediction.predicted_home_rate
+        away_rate = prediction.predicted_away_rate
+        if home_rate is not None and away_rate is not None:
+            return float(home_rate), float(away_rate)
+        return (
+            float(prediction.predicted_home_goals or 0),
+            float(prediction.predicted_away_goals or 0),
+        )
 
     for prediction in predictions:
         raw_home, raw_away = _raw_goal_expectations(prediction)
