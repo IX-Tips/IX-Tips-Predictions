@@ -1567,6 +1567,19 @@ def build_fixture_features(home_team, away_team, model_context):
     return pd.DataFrame([row], columns=feature_columns)
 
 
+def _estimate_goal_rate_bias(actual, predicted, min_samples=20, shrink=0.65, limit=0.35):
+    """Return a conservative residual correction from a chronological holdout."""
+    actual = np.asarray(actual, dtype=float).reshape(-1)
+    predicted = np.asarray(predicted, dtype=float).reshape(-1)
+    if actual.size != predicted.size or actual.size < min_samples:
+        return 0.0
+    valid = np.isfinite(actual) & np.isfinite(predicted)
+    if int(valid.sum()) < min_samples:
+        return 0.0
+    residual = actual[valid] - predicted[valid]
+    return float(np.clip(np.mean(residual) * shrink, -limit, limit))
+
+
 def train_models(X, y_home, y_away, sample_weight=None):
     """
     Trains two Poisson XGBoost regressors for home and away goals.
@@ -1753,10 +1766,12 @@ def train_models(X, y_home, y_away, sample_weight=None):
     goal_bias_home = goal_bias_away = 0.0
     try:
         if len(X_te) >= 20:
-            residual_home = np.asarray(yh_te, dtype=float) - np.asarray(model_home.predict(X_te), dtype=float)
-            residual_away = np.asarray(ya_te, dtype=float) - np.asarray(model_away.predict(X_te), dtype=float)
-            goal_bias_home = float(np.clip(np.mean(residual_home) * 0.65, -0.35, 0.35))
-            goal_bias_away = float(np.clip(np.mean(residual_away) * 0.65, -0.35, 0.35))
+            predicted_home_holdout = np.asarray(model_home.predict(X_te), dtype=float)
+            predicted_away_holdout = np.asarray(model_away.predict(X_te), dtype=float)
+            residual_home = np.asarray(yh_te, dtype=float) - predicted_home_holdout
+            residual_away = np.asarray(ya_te, dtype=float) - predicted_away_holdout
+            goal_bias_home = _estimate_goal_rate_bias(yh_te, predicted_home_holdout)
+            goal_bias_away = _estimate_goal_rate_bias(ya_te, predicted_away_holdout)
             logger.info(
                 "GOAL_RATE_CALIBRATION holdout=%d home_bias=%.3f away_bias=%.3f "
                 "home_residual_sd=%.3f away_residual_sd=%.3f",
