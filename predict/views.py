@@ -30,7 +30,11 @@ from django_celery_beat.models import PeriodicTask
 from .models import ComboSlip, ComboSlipLeg, MatchOdds, MatchPrediction, TopPick, SlipBatch
 from .cache_keys import CacheKeys
 from .forms import ActualResultForm, PredictionForm, LivePredictionForm
-from .constants import (API_TOKEN, COMPETITIONS, ODDS_API_KEY as SETTINGS_ODDS_API_KEY, country_flag_url, get_team_metadata, get_football_team_logo_url, get_football_competition_logo_url)
+from .constants import (
+    API_TOKEN, COMPETITIONS, COMPETITION_DISPLAY_ORDER, NAME_TO_CODE,
+    ODDS_API_KEY as SETTINGS_ODDS_API_KEY, country_flag_url, get_team_metadata,
+    get_football_team_logo_url, get_football_competition_logo_url,
+)
 from .utils import (
     _market_odds_value,
     explain_pick_reasons,
@@ -2696,59 +2700,183 @@ def auto_track_combo_slip(context, size, market_filter="", style="safe", return_
 def predictions_view(request):
     today = timezone.localdate()
     prediction_window_end = today + timedelta(days=6)
-    requested_match_date = request.GET.get("match_date")
-    match_date = requested_match_date
-    predictions = MatchPrediction.objects.select_related("odds").all().order_by("match_date")
+    window_predictions = MatchPrediction.objects.filter(
+        match_date__range=(today, prediction_window_end),
+    )
 
-    if match_date:
+    # Build the league selector from competitions that actually have stored
+    # predictions in the visible seven-day window.
+    stored_competitions = set(
+        window_predictions.values_list("competition", flat=True).distinct()
+    )
+    available_codes = {
+        code for code, name in competitions.items()
+        if code in stored_competitions or name in stored_competitions
+    }
+    rank_map = {code: rank for rank, code in enumerate(COMPETITION_DISPLAY_ORDER)}
+    ranked_codes = sorted(
+        available_codes,
+        key=lambda code: (
+            rank_map.get(code, len(rank_map)),
+            competitions.get(code, code).casefold(),
+        ),
+    )
+    competition_options = [
+        {"code": code, "name": competitions[code]}
+        for code in ranked_codes
+    ]
+
+    requested_competition = (request.GET.get("competition") or "").strip()
+    selected_code = (
+        requested_competition
+        if requested_competition in competitions
+        else NAME_TO_CODE.get(requested_competition.lower(), "")
+    )
+    if selected_code not in available_codes:
+        selected_code = ""
+
+    selected_competition_values = (
+        (selected_code, competitions.get(selected_code, selected_code))
+        if selected_code else ()
+    )
+    date_queryset = window_predictions
+    if selected_code:
+        date_queryset = date_queryset.filter(competition__in=selected_competition_values)
+
+    available_dates = list(
+        date_queryset.order_by("match_date")
+        .values_list("match_date", flat=True)
+        .distinct()
+    )
+    requested_match_date = request.GET.get("match_date")
+    selected_day = None
+    if requested_match_date:
         try:
-            requested_day = datetime.strptime(match_date, "%Y-%m-%d").date()
+            requested_day = date.fromisoformat(requested_match_date)
         except (TypeError, ValueError):
             requested_day = None
-        if requested_day and requested_day > prediction_window_end:
-            match_date = None
-        elif requested_day:
-            predictions = predictions.filter(match_date=requested_day)
-        else:
-            match_date = None
+        if requested_day and today <= requested_day <= prediction_window_end:
+            selected_day = requested_day
 
-    if not match_date:
-        predictions = predictions.filter(match_date__lte=prediction_window_end)
-        available_dates = list(
-            MatchPrediction.objects.filter(
-                match_date__gte=today,
-                match_date__lte=prediction_window_end,
-            ).order_by("match_date")
-            .values_list("match_date", flat=True)
-            .distinct()
-        )
-        selected_default_date = None
+    if selected_day is None:
         if today in available_dates:
-            selected_default_date = today
+            selected_day = today
         elif available_dates:
-            selected_default_date = available_dates[0]
-
-        if selected_default_date:
-            match_date = selected_default_date.isoformat()
-            predictions = predictions.filter(match_date=selected_default_date)
+            selected_day = available_dates[0]
         else:
-            predictions = predictions.exclude(status="FINISHED")
+            selected_day = today
 
-    # Page rendering is read-only: provider status refreshes belong to the
-    # scheduled live task, not to visitor requests.
-    predictions = predictions.select_related("odds")
+    predictions = window_predictions.filter(match_date=selected_day).select_related("odds")
+    if selected_code:
+        predictions = predictions.filter(competition__in=selected_competition_values)
 
-    selected_code = request.GET.get("competition")
-    if not selected_code:
-        first_match = predictions.first()
-        if first_match:
-            selected_code = NAME_TO_CODE.get(first_match.competition.lower().strip(), "PL")
+    # Stable league-strength ordering first, then kickoff and team names.
+    display_data = []
+    for prediction in predictions:
+        meta_home = get_team_metadata(prediction.home_team, prediction.competition)
+        meta_away = get_team_metadata(prediction.away_team, prediction.competition)
+        home_display_name = normalize_display_team_name(
+            meta_home.get("shortName"), fallback=prediction.home_team,
+        )
+        away_display_name = normalize_display_team_name(
+            meta_away.get("shortName"), fallback=prediction.away_team,
+        )
+
+        comp_code = (
+            prediction.competition
+            if prediction.competition in competitions
+            else NAME_TO_CODE.get(prediction.competition.lower().strip(), "default")
+        )
+        competition_name = competitions.get(comp_code, prediction.competition)
+        competition_logo_path = resolve_competition_logo(comp_code)
+
+        actual_result = "-:-"
+        actual_winner = None
+        if prediction.status == "FINISHED" and prediction.actual_home_goals is not None:
+            actual_result = f"{prediction.actual_home_goals} - {prediction.actual_away_goals}"
+            if prediction.actual_home_goals > prediction.actual_away_goals:
+                actual_winner = "1"
+            elif prediction.actual_home_goals < prediction.actual_away_goals:
+                actual_winner = "2"
+            else:
+                actual_winner = "X"
+
+        if (prediction.predicted_home_goals or 0) > (prediction.predicted_away_goals or 0):
+            winner = "1"
+        elif (prediction.predicted_home_goals or 0) < (prediction.predicted_away_goals or 0):
+            winner = "2"
         else:
-            selected_code = "PL"
+            winner = "X"
 
-    league_table = get_league_table(selected_code)
-    # Serve the sidebar from persisted picks. Never train models or generate
-    # candidates while rendering this page.
+        odds = resolve_prediction_odds(prediction)
+        if winner == "1":
+            display_odds = getattr(odds, "home_win", None) if odds else getattr(prediction, "odds_home", None)
+        elif winner == "2":
+            display_odds = getattr(odds, "away_win", None) if odds else getattr(prediction, "odds_away", None)
+        else:
+            display_odds = getattr(odds, "draw", None) if odds else getattr(prediction, "odds_draw", None)
+
+        display_data.append({
+            "home_team": home_display_name,
+            "away_team": away_display_name,
+            "home_form": get_team_recent_form(prediction.home_team, comp_code),
+            "away_form": get_team_recent_form(prediction.away_team, comp_code),
+            "predicted_home_goals": prediction.predicted_home_goals,
+            "predicted_away_goals": prediction.predicted_away_goals,
+            "match_date": prediction.match_date.strftime("%Y-%m-%d"),
+            "match_time": get_cached_kickoff_time(
+                comp_code, prediction.match_date, prediction.home_team, prediction.away_team,
+            ),
+            "competition": normalize_display_competition_name(
+                competition_name, code=comp_code,
+            ),
+            "competition_name": competition_name,
+            "competition_code": comp_code,
+            "competition_rank": rank_map.get(comp_code, len(rank_map)),
+            "status": prediction.status,
+            "actual_home_goals": prediction.actual_home_goals,
+            "actual_away_goals": prediction.actual_away_goals,
+            "actual_result": actual_result,
+            "home_logo": meta_home.get("crest") or static("logos/default.png"),
+            "away_logo": meta_away.get("crest") or static("logos/default.png"),
+            "competition_logo": competition_logo_path,
+            "winner": winner,
+            "actual_winner": actual_winner if prediction.status == "FINISHED" else None,
+            "odds_home": getattr(prediction, "odds_home", None),
+            "odds_draw": getattr(prediction, "odds_draw", None),
+            "odds_away": getattr(prediction, "odds_away", None),
+            "odds_gg": getattr(prediction, "odds_gg", None),
+            "odds_over_25": getattr(prediction, "odds_over_25", None),
+            "odds": odds,
+            "display_odds": display_odds,
+            "detail_url": build_match_detail_url(prediction, source="predictions"),
+        })
+
+    display_data.sort(
+        key=lambda row: (
+            row["competition_rank"],
+            row["match_time"] or "99:99",
+            row["home_team"].casefold(),
+        )
+    )
+
+    # The sidebar still needs one table when "All leagues" is selected.
+    sidebar_competition = selected_code or (ranked_codes[0] if ranked_codes else "PL")
+    league_table = get_league_table(sidebar_competition)
+    for row in league_table:
+        team_name = row["team"]["name"]
+        meta = get_team_metadata(team_name, sidebar_competition)
+        row["team"]["shortName"] = normalize_display_team_name(
+            meta.get("shortName"), fallback=team_name,
+        )
+        row["team"]["crest"] = (
+            meta.get("crest")
+            or country_flag_url(sidebar_competition)
+            or static("logos/default.png")
+        )
+
+    # Top picks are read from storage only. No inference or candidate building
+    # is allowed in a normal page request.
     top_predictions = {}
     stored_picks = TopPick.objects.filter(
         match_date__gte=today,
@@ -2765,98 +2893,17 @@ def predictions_view(request):
             "odds": pick.odds,
         })
 
-    display_data = []
-    for p in predictions:
-        meta_home = get_team_metadata(p.home_team, p.competition)
-        meta_away = get_team_metadata(p.away_team, p.competition)
-        home_display_name = normalize_display_team_name(
-            meta_home.get("shortName"),
-            fallback=p.home_team,
-        )
-        away_display_name = normalize_display_team_name(
-            meta_away.get("shortName"),
-            fallback=p.away_team,
-        )
-
-        comp_code = p.competition if p.competition in competitions else NAME_TO_CODE.get(p.competition.lower().strip(), "default")
-        competition_logo_path = resolve_competition_logo(comp_code)
-
-        actual_result = "-:-"
-        actual_winner = None
-        if p.status == "FINISHED" and p.actual_home_goals is not None:
-            actual_result = f"{p.actual_home_goals} - {p.actual_away_goals}"
-            if p.actual_home_goals > p.actual_away_goals:
-                actual_winner = "1"
-            elif p.actual_home_goals < p.actual_away_goals:
-                actual_winner = "2"
-            else:
-                actual_winner = "X"
-
-        if (p.predicted_home_goals or 0) > (p.predicted_away_goals or 0):
-            winner = "1"
-        elif (p.predicted_home_goals or 0) < (p.predicted_away_goals or 0):
-            winner = "2"
-        else:
-            winner = "X"
-
-        odds = resolve_prediction_odds(p)
-        if winner == "1":
-            display_odds = getattr(odds, "home_win", None) if odds else getattr(p, "odds_home", None)
-        elif winner == "2":
-            display_odds = getattr(odds, "away_win", None) if odds else getattr(p, "odds_away", None)
-        else:
-            display_odds = getattr(odds, "draw", None) if odds else getattr(p, "odds_draw", None)
-
-        display_data.append({
-            "home_team": home_display_name,
-            "away_team": away_display_name,
-            "home_form": get_team_recent_form(p.home_team, comp_code),
-            "away_form": get_team_recent_form(p.away_team, comp_code),
-            "predicted_home_goals": p.predicted_home_goals,
-            "predicted_away_goals": p.predicted_away_goals,
-            "match_date": p.match_date.strftime("%Y-%m-%d"),
-            "match_time": get_cached_kickoff_time(comp_code, p.match_date, p.home_team, p.away_team),
-            "competition": p.competition,
-            "competition_code": comp_code,
-            "status": p.status,
-            "actual_home_goals": p.actual_home_goals,
-            "actual_away_goals": p.actual_away_goals,
-            "actual_result": actual_result,
-            "home_logo": meta_home.get("crest", static("logos/default.png")),
-            "away_logo": meta_away.get("crest", static("logos/default.png")),
-            "competition_logo": competition_logo_path,
-            "winner": winner,
-            "actual_winner": actual_winner if p.status == "FINISHED" else None,
-            "odds_home": getattr(p, "odds_home", None),
-            "odds_draw": getattr(p, "odds_draw", None),
-            "odds_away": getattr(p, "odds_away", None),
-            "odds_gg": getattr(p, "odds_gg", None),
-            "odds_over_25": getattr(p, "odds_over_25", None),
-            "odds": odds,
-            "display_odds": display_odds,
-            "detail_url": build_match_detail_url(p, source="predictions"),
-        })
-
-    for row in league_table:
-        team_name = row["team"]["name"]
-        meta = get_team_metadata(team_name, selected_code)
-        row["team"]["shortName"] = normalize_display_team_name(
-            meta.get("shortName"),
-            fallback=team_name,
-        )
-        row["team"]["crest"] = (
-            meta.get("crest") or country_flag_url(selected_code) or static("logos/default.png")
-        )
-
     paginator = Paginator(display_data, 10)
-    page_number = request.GET.get("page")
-    paginated_predictions = paginator.get_page(page_number)
+    paginated_predictions = paginator.get_page(request.GET.get("page"))
     return render(request, "predict/predictions_view.html", {
         "predictions": paginated_predictions,
         "league_table": league_table,
         "competitions": competitions,
+        "competition_options": competition_options,
         "selected_competition": selected_code,
-        "selected_date": match_date,
+        "selected_date": selected_day.isoformat(),
+        "today_date": today.isoformat(),
+        "prediction_window_end": prediction_window_end.isoformat(),
         "page_obj": paginated_predictions,
         "top_predictions": top_predictions,
     })
