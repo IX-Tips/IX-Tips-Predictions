@@ -2244,6 +2244,12 @@ def save_predictions(matches, model_home=None, model_away=None, le=None, match_d
                         and _normalize_team_lookup_value(row.away_team) == normalized_away
                     ), None)
 
+            # Finished/awarded forecasts are immutable snapshots. Avoid running
+            # inference for them and never replace the prediction used for evaluation.
+            if existing_obj is not None and str(existing_obj.status or "").upper() in {"FINISHED", "AWARDED"}:
+                saved.append(existing_obj)
+                continue
+
             # If models provided: prepare input for prediction
             predicted_home_rate = None
             predicted_away_rate = None
