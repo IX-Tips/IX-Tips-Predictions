@@ -2021,8 +2021,28 @@ def _build_market_rows(prediction, feature_snapshot):
     except MatchOdds.DoesNotExist:
         odds_obj = None
 
-    bundle = get_or_train_model_bundle(prediction.competition)
-    model_context = bundle[2] if bundle and len(bundle) == 3 else {}
+    # A detail-page GET must not train a model. Use the worker-populated
+    # in-process/file cache; if unavailable, render the fixture without markets.
+    try:
+        from django.core.cache import caches
+        from .constants import model_cache_key
+        from .utils import _MODEL_REGISTRY
+        bundle = _MODEL_REGISTRY.get(prediction.competition)
+        if bundle is None:
+            bundle = caches["model_cache"].get(model_cache_key(prediction.competition))
+    except Exception:
+        logger.exception(
+            "MATCH_DETAIL_MODEL_CACHE_READ_FAILED competition=%s",
+            prediction.competition,
+        )
+        bundle = None
+    if not bundle or len(bundle) != 3 or not isinstance(bundle[2], dict):
+        logger.info(
+            "MATCH_DETAIL_MODEL_UNAVAILABLE competition=%s match=%s",
+            prediction.competition, prediction.pk,
+        )
+        return [], {}
+    model_context = bundle[2]
     ranked_markets, feature_snapshot = score_top_pick_markets(prediction, model_context)
 
     market_rows = []
