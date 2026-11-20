@@ -22,6 +22,9 @@ class ChronologicalFeatureTests(TestCase):
 
         self.assertEqual(features.iloc[0]["home_elo"], 1500.0)
         self.assertEqual(features.iloc[0]["away_elo"], 1500.0)
+        # First-row league baselines must use neutral priors, not the full
+        # history average (which already includes this match and later games).
+        self.assertAlmostEqual(features.iloc[0]["home_advantage"], 0.3, places=6)
         self.assertGreater(context["elo_ratings"]["Alpha FC"], 1500.0)
         self.assertLess(context["elo_ratings"]["Beta FC"], 1500.0)
 
