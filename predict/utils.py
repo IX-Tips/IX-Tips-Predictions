@@ -1556,6 +1556,60 @@ def build_training_features(df, lookback=8):
     return X, y_home, y_away, model_context
 
 
+def summarize_competition_feature_coverage(history, features):
+    """
+    Summarize pre-match history coverage by competition without fetching data
+    or running inference. Rows are positionally aligned with the feature
+    matrix returned by build_training_features().
+    """
+    if history is None or history.empty or features is None or features.empty:
+        return []
+
+    row_count = min(len(history), len(features))
+    if row_count == 0:
+        return []
+
+    history_rows = history.iloc[:row_count].reset_index(drop=True)
+    feature_rows = features.iloc[:row_count].reset_index(drop=True)
+    competition_column = next(
+        (column for column in ("competition", "competition_code") if column in history_rows.columns),
+        None,
+    )
+    if competition_column:
+        competitions = history_rows[competition_column].fillna("UNKNOWN").astype(str)
+    else:
+        competitions = pd.Series(["UNKNOWN"] * row_count)
+
+    coverage = []
+    for competition in competitions.drop_duplicates().tolist():
+        indexes = competitions[competitions == competition].index
+        rows = feature_rows.loc[indexes]
+        home_seen = pd.to_numeric(rows.get("home_matches_seen", 0), errors="coerce")
+        away_seen = pd.to_numeric(rows.get("away_matches_seen", 0), errors="coerce")
+        h2h_seen = pd.to_numeric(rows.get("h2h_match_count", 0), errors="coerce")
+        if not isinstance(home_seen, pd.Series):
+            home_seen = pd.Series([home_seen] * len(rows), index=rows.index)
+        if not isinstance(away_seen, pd.Series):
+            away_seen = pd.Series([away_seen] * len(rows), index=rows.index)
+        if not isinstance(h2h_seen, pd.Series):
+            h2h_seen = pd.Series([h2h_seen] * len(rows), index=rows.index)
+
+        fixture_count = len(rows)
+        coverage.append({
+            "competition": competition,
+            "fixtures": fixture_count,
+            "home_history_pct": round(float((home_seen.fillna(0) > 0).mean() * 100), 1),
+            "away_history_pct": round(float((away_seen.fillna(0) > 0).mean() * 100), 1),
+            "home_three_plus_pct": round(float((home_seen.fillna(0) >= 3).mean() * 100), 1),
+            "away_three_plus_pct": round(float((away_seen.fillna(0) >= 3).mean() * 100), 1),
+            "h2h_history_pct": round(float((h2h_seen.fillna(0) > 0).mean() * 100), 1),
+            "avg_home_matches_seen": round(float(home_seen.fillna(0).mean()), 2),
+            "avg_away_matches_seen": round(float(away_seen.fillna(0).mean()), 2),
+        })
+
+    return coverage
+
+
 def build_fixture_features(home_team, away_team, model_context):
     history = (model_context or {}).get("history")
     lookback = (model_context or {}).get("lookback", 8)
