@@ -1138,11 +1138,21 @@ def _build_feature_row(home_team, away_team, team_profiles, h2h_profiles, league
         _normalize_team_lookup_value(home_team),
         _normalize_team_lookup_value(away_team),
     )))
-    h2h_matches = []
-    for stored_pair, stored_matches in h2h_profiles.items():
-        if tuple(sorted(_normalize_team_lookup_value(team) for team in stored_pair)) == normalized_pair:
-            h2h_matches = stored_matches
-            break
+    # New model contexts use canonical pair keys (O(1)). Retain a
+    # compatibility path for older/externally supplied contexts whose H2H
+    # keys were stored with provider display names. Newly built profiles
+    # always hit the canonical fast path and never scan the history.
+    h2h_matches = h2h_profiles.get(normalized_pair)
+    if h2h_matches is None:
+        h2h_matches = next(
+            (
+                matches for pair, matches in h2h_profiles.items()
+                if len(pair) == 2
+                and tuple(sorted(_normalize_team_lookup_value(name) for name in pair))
+                == normalized_pair
+            ),
+            [],
+        )
     h2h_summary = _summarize_head_to_head(
         home_team,
         away_team,
@@ -1294,11 +1304,13 @@ def _build_profiles_from_history(history):
         home_goals = float(row["home_goals"])
         away_goals = float(row["away_goals"])
 
-        _update_team_profile(team_profiles[home_team], home_goals, away_goals, "home", match_date)
-        _update_team_profile(team_profiles[away_team], away_goals, home_goals, "away", match_date)
-        h2h_profiles[tuple(sorted((home_team, away_team)))].append({
-            "home_team": home_team,
-            "away_team": away_team,
+        home_key = _normalize_team_lookup_value(home_team) or home_team
+        away_key = _normalize_team_lookup_value(away_team) or away_team
+        _update_team_profile(team_profiles[home_key], home_goals, away_goals, "home", match_date)
+        _update_team_profile(team_profiles[away_key], away_goals, home_goals, "away", match_date)
+        h2h_profiles[tuple(sorted((home_key, away_key)))].append({
+            "home_team": home_key,
+            "away_team": away_key,
             "home_goals": home_goals,
             "away_goals": away_goals,
         })
@@ -1502,13 +1514,18 @@ def build_training_features(df, lookback=8):
         home_goals = float(row["home_goals"])
         away_goals = float(row["away_goals"])
 
-        _update_team_profile(team_profiles[home], home_goals, away_goals, "home", match_date)
-        _update_team_profile(team_profiles[away], away_goals, home_goals, "away", match_date)
-        _update_elo_ratings(elo_ratings, home, away, home_goals, away_goals,
+        # Aggregate provider variants into one team identity before updating
+        # rolling form, Elo and H2H state. Lookup-only aliases are insufficient:
+        # they can still leave duplicate partial profiles in the history store.
+        home_key = _normalize_team_lookup_value(home) or home
+        away_key = _normalize_team_lookup_value(away) or away
+        _update_team_profile(team_profiles[home_key], home_goals, away_goals, "home", match_date)
+        _update_team_profile(team_profiles[away_key], away_goals, home_goals, "away", match_date)
+        _update_elo_ratings(elo_ratings, home_key, away_key, home_goals, away_goals,
                            k_factor=32.0)
-        h2h_profiles[tuple(sorted((home, away)))].append({
-            "home_team": home,
-            "away_team": away,
+        h2h_profiles[tuple(sorted((home_key, away_key)))].append({
+            "home_team": home_key,
+            "away_team": away_key,
             "home_goals": home_goals,
             "away_goals": away_goals,
         })
@@ -1518,6 +1535,14 @@ def build_training_features(df, lookback=8):
     X = pd.DataFrame(feature_rows, columns=expected_columns).fillna(0)
     y_home = history["home_goals"].astype(float)
     y_away = history["away_goals"].astype(float)
+    # Keep original provider labels available to older consumers that
+    # inspect the Elo snapshot directly. Canonical identities remain the
+    # source of truth for all feature lookups.
+    for team_name in pd.concat([history["home_team"], history["away_team"]]).dropna().unique():
+        canonical_name = _normalize_team_lookup_value(team_name) or team_name
+        if canonical_name in elo_ratings:
+            elo_ratings[team_name] = elo_ratings[canonical_name]
+
     model_context = {
         "history": history[["home_team", "away_team", "home_goals", "away_goals", "utc_date"]].copy(),
         "league_home_goals": league_home_goals,
@@ -1529,6 +1554,60 @@ def build_training_features(df, lookback=8):
         "elo_ratings": dict(elo_ratings),
     }
     return X, y_home, y_away, model_context
+
+
+def summarize_competition_feature_coverage(history, features):
+    """
+    Summarize pre-match history coverage by competition without fetching data
+    or running inference. Rows are positionally aligned with the feature
+    matrix returned by build_training_features().
+    """
+    if history is None or history.empty or features is None or features.empty:
+        return []
+
+    row_count = min(len(history), len(features))
+    if row_count == 0:
+        return []
+
+    history_rows = history.iloc[:row_count].reset_index(drop=True)
+    feature_rows = features.iloc[:row_count].reset_index(drop=True)
+    competition_column = next(
+        (column for column in ("competition", "competition_code") if column in history_rows.columns),
+        None,
+    )
+    if competition_column:
+        competitions = history_rows[competition_column].fillna("UNKNOWN").astype(str)
+    else:
+        competitions = pd.Series(["UNKNOWN"] * row_count)
+
+    coverage = []
+    for competition in competitions.drop_duplicates().tolist():
+        indexes = competitions[competitions == competition].index
+        rows = feature_rows.loc[indexes]
+        home_seen = pd.to_numeric(rows.get("home_matches_seen", 0), errors="coerce")
+        away_seen = pd.to_numeric(rows.get("away_matches_seen", 0), errors="coerce")
+        h2h_seen = pd.to_numeric(rows.get("h2h_match_count", 0), errors="coerce")
+        if not isinstance(home_seen, pd.Series):
+            home_seen = pd.Series([home_seen] * len(rows), index=rows.index)
+        if not isinstance(away_seen, pd.Series):
+            away_seen = pd.Series([away_seen] * len(rows), index=rows.index)
+        if not isinstance(h2h_seen, pd.Series):
+            h2h_seen = pd.Series([h2h_seen] * len(rows), index=rows.index)
+
+        fixture_count = len(rows)
+        coverage.append({
+            "competition": competition,
+            "fixtures": fixture_count,
+            "home_history_pct": round(float((home_seen.fillna(0) > 0).mean() * 100), 1),
+            "away_history_pct": round(float((away_seen.fillna(0) > 0).mean() * 100), 1),
+            "home_three_plus_pct": round(float((home_seen.fillna(0) >= 3).mean() * 100), 1),
+            "away_three_plus_pct": round(float((away_seen.fillna(0) >= 3).mean() * 100), 1),
+            "h2h_history_pct": round(float((h2h_seen.fillna(0) > 0).mean() * 100), 1),
+            "avg_home_matches_seen": round(float(home_seen.fillna(0).mean()), 2),
+            "avg_away_matches_seen": round(float(away_seen.fillna(0).mean()), 2),
+        })
+
+    return coverage
 
 
 def build_fixture_features(home_team, away_team, model_context):
@@ -2041,8 +2120,12 @@ def predict_match_outcome(home_team, away_team, models, label_encoder=None):
     #   (b) League experience — promoted teams (0 matches) trust ELO more;
     #       established teams (30+ matches) let XGBoost take over
     if isinstance(model_extra, dict):
-        elo_h = float(model_extra.get("elo_ratings", {}).get(home_team, 1500))
-        elo_a = float(model_extra.get("elo_ratings", {}).get(away_team, 1500))
+        elo_h = float(_lookup_normalized_team_value(
+            model_extra.get("elo_ratings", {}), home_team, 1500
+        ))
+        elo_a = float(_lookup_normalized_team_value(
+            model_extra.get("elo_ratings", {}), away_team, 1500
+        ))
         elo_diff = elo_h - elo_a
         league_hg = float(model_extra.get("league_home_goals", 1.4))
         league_ag = float(model_extra.get("league_away_goals", 1.1))
@@ -2050,8 +2133,14 @@ def predict_match_outcome(home_team, away_team, models, label_encoder=None):
         elo_exp_a = max(0.3, league_ag - elo_diff * 0.0035)
         # Per-team experience modifier — promoted teams (0 matches) get more
         # ELO weight on THEIR goal prediction. Established teams trust XGBoost.
-        h_exp = len(model_extra.get("team_profiles", {}).get(home_team, {}).get("overall_points", []))
-        a_exp = len(model_extra.get("team_profiles", {}).get(away_team, {}).get("overall_points", []))
+        home_profile = _lookup_normalized_team_value(
+            model_extra.get("team_profiles", {}), home_team, {}
+        )
+        away_profile = _lookup_normalized_team_value(
+            model_extra.get("team_profiles", {}), away_team, {}
+        )
+        h_exp = len(home_profile.get("overall_points", []))
+        a_exp = len(away_profile.get("overall_points", []))
         w_h = min(0.85, abs(elo_diff) / 250) * max(0.4, 1.0 - h_exp / 80)
         w_a = min(0.85, abs(elo_diff) / 250) * max(0.4, 1.0 - a_exp / 80)
         raw_h = raw_h * (1 - w_h) + elo_exp_h * w_h
