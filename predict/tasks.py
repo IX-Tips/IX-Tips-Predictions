@@ -237,10 +237,16 @@ def _refresh_live_match_data_impl():
         competition = entry["competition"]
         if not competition or not match_date:
             continue
+        pair_started = time.monotonic()
         try:
             # Normal cache guard is intentional: refresh_prediction_statuses
             # stores a five-minute per-date cache entry after each provider call.
-            status_updates += refresh_prediction_statuses(competition, match_date)
+            updated = refresh_prediction_statuses(competition, match_date)
+            status_updates += updated
+            logger.info(
+                "LIVE_REFRESH_PAIR competition=%s date=%s elapsed_seconds=%.3f status_updates=%s",
+                competition, match_date, time.monotonic() - pair_started, updated,
+            )
         except Exception:
             logger.exception(
                 "Live status refresh failed for %s on %s",
