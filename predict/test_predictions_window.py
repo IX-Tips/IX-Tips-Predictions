@@ -55,7 +55,7 @@ class PredictionsWindowAndLeagueFilterTests(TestCase):
         context = self.get_context({"match_date": (self.today + timedelta(days=7)).isoformat()})
 
         self.assertEqual(context["selected_date"], self.today.isoformat())
-        self.assertEqual([row["home_team"] for row in context["predictions"]], ["today Home"])
+        self.assertEqual([row["home_team"] for row in context["predictions"]], ["Today Home"])
         self.assertEqual(context["prediction_window_end"], (self.today + timedelta(days=6)).isoformat())
 
     def test_competition_filter_only_returns_selected_league(self):
