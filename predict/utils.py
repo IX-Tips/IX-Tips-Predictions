@@ -2447,6 +2447,7 @@ def fetch_odds_for_date(
     feed is empty/unavailable. The fallback is date-scoped and cached because
     API-Football refreshes pre-match odds only every few hours.
     """
+    primary_data = []
     primary_key = odds_api_key or ODDS_API_KEY
     if primary_key and ODDS_PROVIDER == "the-odds-api":
         url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds"
@@ -2457,30 +2458,49 @@ def fetch_odds_for_date(
             "oddsFormat": odds_format,
         }
         data = _get_json(url, headers=None, params=params, retries=2)
-        if isinstance(data, list) and data:
-            return data
+        if isinstance(data, list):
+            primary_data = data
 
     if not APIFOOTBALL_API_KEY:
-        return []
+        return primary_data
 
     target_date = str(match_date or timezone.localdate().isoformat())
     cache_key = f"odds_fallback_apifootball_{target_date}"
     cached = cache.get(cache_key)
-    if cached is not None:
-        return cached
+    if cached is None:
+        fallback_url = "https://v3.football.api-sports.io/odds"
+        payload = _get_json(
+            fallback_url,
+            headers={"x-apisports-key": APIFOOTBALL_API_KEY},
+            params={"date": target_date},
+            retries=1,
+        )
+        normalized = _normalize_apifootball_odds(payload)
+        # Cache only valid provider responses. Do not turn outages or
+        # authentication failures into a three-hour negative cache.
+        if isinstance(payload, dict) and not payload.get("errors"):
+            cache.set(cache_key, normalized, timeout=60 * 60 * 3)
+        cached = normalized
 
-    fallback_url = "https://v3.football.api-sports.io/odds"
-    payload = _get_json(
-        fallback_url,
-        headers={"x-apisports-key": APIFOOTBALL_API_KEY},
-        params={"date": target_date},
-        retries=1,
-    )
-    normalized = _normalize_apifootball_odds(payload)
-    # Provider refreshes approximately every three hours; avoid repeated calls
-    # during page loads and prediction generation.
-    cache.set(cache_key, normalized, timeout=60 * 60 * 3)
-    return normalized
+    # Keep primary prices first, but supplement fixtures missing from the
+    # primary feed. Canonical team identities prevent duplicate provider rows.
+    seen = {
+        (
+            _normalize_team_lookup_value(item.get("home_team") or item.get("home")) or "",
+            _normalize_team_lookup_value(item.get("away_team") or item.get("away")) or "",
+        )
+        for item in primary_data
+    }
+    for item in cached or []:
+        key = (
+            _normalize_team_lookup_value(item.get("home_team")) or "",
+            _normalize_team_lookup_value(item.get("away_team")) or "",
+        )
+        if key[0] and key[1] and key not in seen:
+            primary_data.append(item)
+            seen.add(key)
+
+    return primary_data
 
 
 def attach_odds_to_predictions(match_predictions, odds_list):
