@@ -5,6 +5,7 @@ import hashlib
 import os
 import re
 import json
+import logging
 import requests
 import pandas as pd
 from datetime import datetime, date, timedelta
@@ -23,6 +24,8 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 from celery import current_app
 from django_celery_beat.models import PeriodicTask
