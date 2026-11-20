@@ -779,12 +779,66 @@ def top_picks_view(request):
 
     enriched_picks = []
     for pick in picks:
+        raw_home_team = pick.get("home_team")
+        raw_away_team = pick.get("away_team")
+        pick_key = (pick.get("match_date"), raw_home_team, raw_away_team)
+        competition_code = match_key_to_competition.get(pick_key)
+        matched_prediction = match_key_to_prediction.get(pick_key)
+        competition_name = normalize_display_competition_name(
+            competitions.get(competition_code, competition_code),
+            code=competition_code,
+        )
+        metadata_home_name = matched_prediction.home_team if matched_prediction else raw_home_team
+        metadata_away_name = matched_prediction.away_team if matched_prediction else raw_away_team
+        meta_home = get_team_metadata(metadata_home_name, competition_code)
+        meta_away = get_team_metadata(metadata_away_name, competition_code)
+        home_name = normalize_display_team_name(meta_home.get("shortName"), fallback=raw_home_team, max_length=24)
+        away_name = normalize_display_team_name(meta_away.get("shortName"), fallback=raw_away_team, max_length=24)
+        odds_value = pick.get("odds")
+        if odds_value is None and matched_prediction:
+            try:
+                odds_obj = matched_prediction.odds
+            except MatchOdds.DoesNotExist:
+                odds_obj = None
+            if odds_obj:
+                odds_value = {
+                    "1": odds_obj.home_win,
+                    "2": odds_obj.away_win,
+                    "X": odds_obj.draw,
+                    "Over 2.5": odds_obj.over_2_5,
+                    "Under 2.5": odds_obj.under_2_5,
+                    "GG": odds_obj.btts_yes,
+                    "NG": odds_obj.btts_no,
+                }.get(pick.get("tip"))
 
+        enriched_pick = dict(pick)
+        enriched_pick.update({
+            "home_team": home_name,
+            "away_team": away_name,
+            "fixture": f"{home_name} vs {away_name}",
+            "home_logo": meta_home.get("crest"),
+            "away_logo": meta_away.get("crest"),
+            "home_initials": team_initials(home_name),
+            "away_initials": team_initials(away_name),
+            "competition": competition_name,
+            "competition_code": competition_code,
+            "competition_logo": resolve_competition_logo(competition_code),
+            "odds": odds_value,
+            "implied_probability": None,
+            "edge": None,
+            "reasons": [],
+            "actual_score": None,
+        })
+        if matched_prediction and competition_code:
+            implied_probability, edge = market_edge(pick.get("confidence"), odds_value)
+            enriched_pick["implied_probability"] = implied_probability
+            enriched_pick["edge"] = edge
+            # Explanations are based on persisted score/rate fields only.
+            enriched_pick["reasons"] = explain_pick_reasons(pick.get("tip"), {}, matched_prediction)
+            if matched_prediction.actual_home_goals is not None and matched_prediction.actual_away_goals is not None:
+                enriched_pick["actual_score"] = f"{matched_prediction.actual_home_goals} - {matched_prediction.actual_away_goals}"
         enriched_pick["match_time"] = get_cached_kickoff_time(
-            competition_code,
-            pick.get("match_date"),
-            metadata_home_name,
-            metadata_away_name,
+            competition_code, pick.get("match_date"), metadata_home_name, metadata_away_name,
         )
         enriched_pick["detail_url"] = build_match_detail_url(matched_prediction, source="top_picks") if matched_prediction else None
         enriched_picks.append(enriched_pick)
