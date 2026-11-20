@@ -643,7 +643,6 @@ FOOTBALL_TEAM_LOGO_ALIASES = {
     "tigres": "tigres uanl",
     "chivas": "cd guadalajara",
     "guadalajara": "cd guadalajara",
-    "inter miami": "inter miami cf ii",
     "la galaxy": "los angeles galaxy",
     "lafc": "los angeles football club",
     "nycfc": "new york city football club",
