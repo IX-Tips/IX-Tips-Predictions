@@ -49,8 +49,7 @@ def schedule_predictions_staggered(match_date=None):
 def trigger_staggered_scheduling():
     schedule_predictions_staggered.delay()
 
-@shared_task
-def predict_next_fixtures_for_competition(competition_code, match_date=None):
+def _predict_next_fixtures_for_competition_impl(competition_code, match_date=None):
     from .views import refresh_competition_odds
 
     logger.info("Running prediction for %s on %s", competition_code, match_date or "auto")
@@ -67,37 +66,6 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
             str(match_date)[:10]: fetch_fixture_matches_by_date(None, competition_code, match_date)
         }
     match_dates_to_use = sorted(fixtures_by_date)
-    # Deduplicate at fixture level: only fixtures without a saved prediction
-    # proceed to model loading/training and inference.
-    pending_by_date = {}
-    existing_rows = list(
-        MatchPrediction.objects.filter(
-            competition=competition_code,
-            match_date__in=match_dates_to_use,
-        ).values_list("match_id", "home_team", "away_team", "match_date")
-    )
-    existing_ids = {row[0] for row in existing_rows}
-    existing_pairs = {(str(row[3])[:10], _normalize_team_lookup_value(row[1]), _normalize_team_lookup_value(row[2])) for row in existing_rows}
-    for fixture_day, fixtures in fixtures_by_date.items():
-        pending = []
-        for fixture in fixtures:
-            home = (fixture.get("homeTeam") or {}).get("name")
-            away = (fixture.get("awayTeam") or {}).get("name")
-            if not home or not away:
-                continue
-            fixture_id = canonical_fixture_match_id(competition_code, fixture_day, home, away)
-            normalized_pair = (str(fixture_day)[:10], _normalize_team_lookup_value(home), _normalize_team_lookup_value(away))
-            if fixture_id not in existing_ids and normalized_pair not in existing_pairs:
-                pending.append(fixture)
-        if pending:
-            pending_by_date[fixture_day] = pending
-    fixtures_by_date = pending_by_date
-    match_dates_to_use = sorted(fixtures_by_date)
-    if not match_dates_to_use:
-        result = {"competition": competition_code, "status": "already_covered", "training_entries": 0, "fixture_count": 0, "saved_predictions": 0, "dates_checked": []}
-        logger.info("PREDICTION_COVERAGE %s", result)
-        return result
-
     if not match_dates_to_use:
         result = {"competition": competition_code, "status": "no_fixtures", "training_entries": 0, "fixture_count": 0, "saved_predictions": 0, "dates_checked": []}
         return record(result)
@@ -152,6 +120,32 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
         "dates_with_fixtures": dates_with_fixtures,
     }
     return record(result)
+
+
+@shared_task
+def predict_next_fixtures_for_competition(competition_code, match_date=None):
+    """Serialize prediction runs per competition without suppressing future refreshes."""
+    lock_key = f"task_lock::prediction::{competition_code}"
+    acquired = False
+    try:
+        acquired = cache.add(lock_key, True, timeout=45 * 60)
+    except Exception:
+        logger.exception("Prediction lock unavailable for %s; proceeding unlocked", competition_code)
+    if not acquired:
+        try:
+            if cache.get(lock_key):
+                logger.info("Skipping duplicate active prediction run for %s", competition_code)
+                return {"competition": competition_code, "status": "skipped", "reason": "already_running"}
+        except Exception:
+            logger.exception("Could not inspect prediction lock for %s; proceeding unlocked", competition_code)
+    try:
+        return _predict_next_fixtures_for_competition_impl(competition_code, match_date)
+    finally:
+        if acquired:
+            try:
+                cache.delete(lock_key)
+            except Exception:
+                logger.warning("Could not release prediction lock for %s", competition_code)
 
 @shared_task
 def cache_training_data():
