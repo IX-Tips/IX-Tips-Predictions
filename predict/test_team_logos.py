@@ -120,4 +120,4 @@ class TeamLogoDashboardTests(TestCase):
         rendered = response.content.decode("utf-8")
         self.assertIn("Premier League", rendered)
         self.assertIn("Arsenal", rendered)
-        self.assertNotIn("Serie A", rendered)
+        self.assertEqual(rendered.count("Serie A"), 1)  # Only the dropdown option; no Serie A standings are rendered.
