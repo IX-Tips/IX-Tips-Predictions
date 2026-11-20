@@ -20,11 +20,16 @@ class PredictionsWindowAndLeagueFilterTests(TestCase):
             patch("predict.views.get_cached_kickoff_time", return_value="12:00"),
             patch("predict.views.resolve_competition_logo", return_value=""),
             patch("predict.views.build_match_detail_url", return_value="/match/"),
-            patch("predict.views.render", side_effect=lambda request, template, context: HttpResponse("ok")),
         ]
         for item in self.patches:
             item.start()
             self.addCleanup(item.stop)
+        self.render_mock = patch(
+            "predict.views.render",
+            side_effect=lambda request, template, context: HttpResponse("ok"),
+        )
+        self.render_mock_object = self.render_mock.start()
+        self.addCleanup(self.render_mock.stop)
 
     def add_prediction(self, match_id, competition, day):
         return MatchPrediction.objects.create(
@@ -41,7 +46,7 @@ class PredictionsWindowAndLeagueFilterTests(TestCase):
         request = self.factory.get("/", params or {})
         response = predictions_view(request)
         self.assertEqual(response.status_code, 200)
-        return predictions_view.__globals__["render"].call_args.args[2]
+        return self.render_mock_object.call_args.args[2]
 
     def test_date_outside_seven_day_window_is_rejected(self):
         self.add_prediction("today", "PL", self.today)
