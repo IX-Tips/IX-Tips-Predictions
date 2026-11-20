@@ -25,14 +25,23 @@ from .utils import (
 
 @shared_task
 def schedule_predictions_staggered(match_date=None):
-    delay = 0
+    """Schedule all competitions immediately except Football-data-backed ones.
+
+    FD calls are spaced to respect its rate limits. Other fixture providers
+    do not inherit this delay.
+    """
+    from .providers import get_provider
+
+    fd_delay = 0
     for comp in COMPETITIONS:
-        logger.info(f" Scheduling prediction for {comp} in {delay} seconds")
+        provider = get_provider(comp)
+        countdown = fd_delay if provider == "FD" else 0
+        logger.info("Scheduling %s via %s in %s seconds", comp, provider, countdown)
         predict_next_fixtures_for_competition.apply_async(
-            args=[comp, match_date],
-            countdown=delay
+            args=[comp, match_date], countdown=countdown,
         )
-        delay += 180  # now using 2 minutes instead of 1
+        if provider == "FD":
+            fd_delay += 180
 
 @shared_task
 def trigger_staggered_scheduling():
