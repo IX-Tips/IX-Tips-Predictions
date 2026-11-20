@@ -1138,15 +1138,9 @@ def _build_feature_row(home_team, away_team, team_profiles, h2h_profiles, league
         _normalize_team_lookup_value(home_team),
         _normalize_team_lookup_value(away_team),
     )))
-    # Canonical profile builders store normalized pair keys, making the
-    # common lookup O(1) instead of scanning every historical matchup.
+    # Both rolling and fallback profile builders store canonical pair keys,
+    # so this remains O(1) even when a competition has thousands of pairings.
     h2h_matches = h2h_profiles.get(normalized_pair, [])
-    if not h2h_matches:
-        # Compatibility fallback for externally supplied/legacy contexts.
-        for stored_pair, stored_matches in h2h_profiles.items():
-            if tuple(sorted(_normalize_team_lookup_value(team) for team in stored_pair)) == normalized_pair:
-                h2h_matches = stored_matches
-                break
     h2h_summary = _summarize_head_to_head(
         home_team,
         away_team,
