@@ -23,7 +23,7 @@ class ApiTeamLogoFallbackTests(TestCase):
             with patch("predict.api_views.country_flag_url", return_value="flag.png"):
                 self.assertEqual(
                     _team_logo("Arsenal", "PL", {"crest": "provider.png"}),
-                    "provider.png",
+                    "catalog.png",
                 )
 
     def test_uses_catalogue_before_competition_flag(self):
@@ -32,6 +32,13 @@ class ApiTeamLogoFallbackTests(TestCase):
         with patch("predict.api_views.get_football_team_logo_url", return_value="catalog.png"):
             with patch("predict.api_views.country_flag_url", return_value="flag.png"):
                 self.assertEqual(_team_logo("Arsenal", "PL", {}), "catalog.png")
+
+    def test_uses_provider_crest_when_catalogue_has_no_match(self):
+        from predict.api_views import _team_logo
+
+        with patch("predict.api_views.get_football_team_logo_url", return_value=None):
+            with patch("predict.api_views.country_flag_url", return_value="flag.png"):
+                self.assertEqual(_team_logo("Arsenal", "PL", {"crest": "provider.png"}), "provider.png")
 
     def test_uses_flag_when_no_club_badge_is_available(self):
         from predict.api_views import _team_logo
