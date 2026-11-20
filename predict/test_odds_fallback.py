@@ -74,7 +74,10 @@ class ApiFootballOddsFallbackTests(SimpleTestCase):
                 {
                     "fixture": {"id": 1},
                     "teams": {"home": {"name": "Arsenal FC"}, "away": {"name": "Chelsea"}},
-                    "bookmakers": [{"name": "Fallback", "bets": []}],
+                    "bookmakers": [{"name": "Fallback", "bets": [{
+                        "name": "Match Winner",
+                        "values": [{"value": "Home", "odd": "2.0"}],
+                    }]}],
                 },
                 {
                     "fixture": {"id": 2},
