@@ -445,6 +445,7 @@ def _normalize_team_lookup_value(name):
         "brighton hove albion": "brighton",
         "celta vigo": "celta",
         "athletic club": "athletic bilbao",
+        "charleroi": "royal charleroi s c",
         "royal charleroi s c": "royal charleroi s c",
         "sporting lisbon": "sporting cp",
         "olympique marseille": "marseille",
