@@ -2199,6 +2199,8 @@ def build_match_detail_context(prediction, source=None):
             "elo_gap": round(float(feature_snapshot.get("elo_gap", 0.0)), 1),
             "h2h_total_goals": round(float(feature_snapshot.get("h2h_total_goals", 0.0)), 2),
             "h2h_match_count": int(float(feature_snapshot.get("h2h_match_count", 0.0))),
+            "home_matches_seen": int(float(feature_snapshot.get("home_matches_seen", 0.0))),
+            "away_matches_seen": int(float(feature_snapshot.get("away_matches_seen", 0.0))),
             "home_recent_scored": round(float(feature_snapshot.get("home_recent_scored", 0.0)), 2),
             "away_recent_scored": round(float(feature_snapshot.get("away_recent_scored", 0.0)), 2),
             "home_recent_conceded": round(float(feature_snapshot.get("home_recent_conceded", 0.0)), 2),
