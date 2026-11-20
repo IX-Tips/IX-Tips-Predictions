@@ -2,8 +2,6 @@ import json
 from collections import defaultdict
 
 from django.core.management.base import BaseCommand
-from django.db.models import F, Q
-
 from predict.models import MatchPrediction
 
 
@@ -100,8 +98,8 @@ class Command(BaseCommand):
             margin_abs_error += abs((ph - pa) - (ah - aa))
 
             bucket = competitions[row["competition"]]
-            self._add(bucket, home_error, away_error, score_exact, result_match)
-            self._add(margins[margin_key], home_error, away_error, score_exact, result_match)
+            self._add(bucket, home_error, away_error, abs((ph - pa) - (ah - aa)), score_exact, result_match)
+            self._add(margins[margin_key], home_error, away_error, abs((ph - pa) - (ah - aa)), score_exact, result_match)
 
         summary = {
             "matches_evaluated": total,
@@ -167,11 +165,11 @@ class Command(BaseCommand):
         }
 
     @staticmethod
-    def _add(bucket, home_error, away_error, exact, result_correct):
+    def _add(bucket, home_error, away_error, goal_difference_error, exact, result_correct):
         bucket["matches"] += 1
         bucket["home_abs_error"] += home_error
         bucket["away_abs_error"] += away_error
-        bucket["goal_difference_abs_error"] += abs(home_error - away_error)
+        bucket["goal_difference_abs_error"] += goal_difference_error
         bucket["exact_scores"] += int(exact)
         bucket["correct_results"] += int(result_correct)
 
