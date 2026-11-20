@@ -634,6 +634,7 @@ FOOTBALL_TEAM_LOGO_ALIASES = {
     "internacional rs": "internacional",
     "gremio": "gremio",
     "santos": "santos fc",
+    "charleroi": "royal charleroi s c",
     "rb bragantino": "rb bragantino",
     # Argentina / Mexico / USA / Japan
     "river": "river plate",
