@@ -61,6 +61,7 @@ from .utils import (
     scoreline_predictions,
     update_actuals_for_top_picks,
     get_team_recent_form,
+    canonical_fixture_match_id,
 )
 
 # -------------------------
@@ -613,10 +614,8 @@ def live_predictions_by_date(request):
 
                         result = actual_result_map.get(fixture_key)
                         odds = fetch_odds_for_match(match, competition_code)
-                        external_id = match.get("id")
-                        canonical_id = external_id or (
-                            f"{competition_code}:{match_date}:"
-                            f"{fixture_key[0]}:{fixture_key[1]}"
+                        canonical_id = canonical_fixture_match_id(
+                            competition_code, match_date, home, away,
                         )
                         prediction, created = MatchPrediction.objects.get_or_create(
                             match_id=str(canonical_id),
@@ -2080,20 +2079,39 @@ def build_match_detail_context(prediction, source=None):
     except MatchOdds.DoesNotExist:
         odds_obj = None
 
-    market_rows, feature_snapshot = _build_market_rows(prediction, {})
-    rate_h = getattr(prediction, "predicted_home_rate", None) or prediction.predicted_home_goals or 1.0
-    rate_a = getattr(prediction, "predicted_away_rate", None) or prediction.predicted_away_goals or 1.0
+    # Detail pages must remain available even when a competition's model,
+    # feature history, or scorer provider is incomplete.
+    try:
+        market_rows, feature_snapshot = _build_market_rows(prediction, {})
+    except Exception:
+        logger.exception(
+            "MATCH_DETAIL_MARKET_FEATURES_FAILED competition=%s match=%s",
+            prediction.competition, prediction.pk,
+        )
+        market_rows, feature_snapshot = [], {}
+
+    rate_h = getattr(prediction, "predicted_home_rate", None)
+    rate_a = getattr(prediction, "predicted_away_rate", None)
+    rate_h = float(rate_h if rate_h is not None else (prediction.predicted_home_goals or 1.0))
+    rate_a = float(rate_a if rate_a is not None else (prediction.predicted_away_goals or 1.0))
     scorelines = scoreline_predictions(rate_h, rate_a)
 
-    _, scorer_rows = build_anytime_scorer_rows(prediction.match_date.isoformat())
-    scorer_row = next(
-        (
-            row for row in scorer_rows
-            if _team_name_aliases(row["home_team"]) & _team_name_aliases(home_name)
-            and _team_name_aliases(row["away_team"]) & _team_name_aliases(away_name)
-        ),
-        None,
-    )
+    scorer_row = None
+    try:
+        _, scorer_rows = build_anytime_scorer_rows(prediction.match_date.isoformat())
+        scorer_row = next(
+            (
+                row for row in scorer_rows
+                if _team_name_aliases(row["home_team"]) & _team_name_aliases(home_name)
+                and _team_name_aliases(row["away_team"]) & _team_name_aliases(away_name)
+            ),
+            None,
+        )
+    except Exception:
+        logger.exception(
+            "MATCH_DETAIL_SCORER_ANGLE_FAILED competition=%s match=%s",
+            prediction.competition, prediction.pk,
+        )
 
     actual_result = None
     if prediction.actual_home_goals is not None and prediction.actual_away_goals is not None:
@@ -2951,10 +2969,32 @@ def predictions_view(request):
             "odds": pick.odds,
         })
 
-    paginator = Paginator(display_data, 10)
-    paginated_predictions = paginator.get_page(request.GET.get("page"))
+    # Build complete league sections before pagination. Django's template
+    # regroup only groups adjacent rows and cannot repair split league sections.
+    grouped_by_competition = {}
+    for row in display_data:
+        group = grouped_by_competition.setdefault(row["competition_code"], {
+            "competition_code": row["competition_code"],
+            "competition_name": row["competition_name"],
+            "competition_logo": row["competition_logo"],
+            "matches": [],
+        })
+        group["matches"].append(row)
+    league_groups = sorted(
+        grouped_by_competition.values(),
+        key=lambda group: (
+            rank_map.get(group["competition_code"], len(rank_map)),
+            group["competition_name"].casefold(),
+        ),
+    )
+    paginator = Paginator(league_groups, 3)
+    paginated_groups = paginator.get_page(request.GET.get("page"))
+    paginated_predictions = [
+        match for group in paginated_groups for match in group["matches"]
+    ]
     return render(request, "predict/predictions_view.html", {
         "predictions": paginated_predictions,
+        "league_groups": paginated_groups,
         "league_table": league_table,
         "competitions": competitions,
         "competition_options": competition_options,
@@ -2962,7 +3002,7 @@ def predictions_view(request):
         "selected_date": selected_day.isoformat(),
         "today_date": today.isoformat(),
         "prediction_window_end": prediction_window_end.isoformat(),
-        "page_obj": paginated_predictions,
+        "page_obj": paginated_groups,
         "top_predictions": top_predictions,
     })
 
