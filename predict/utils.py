@@ -49,25 +49,19 @@ def scoreline_predictions(predicted_home_goals, predicted_away_goals, max_goals=
         return float(np.exp(-lam) * (lam ** goals) / math.factorial(goals))
 
     def score_adjustment(home_goals, away_goals):
-        """
-        Light adjustment for known football tendencies:
-        - Draws (especially 0-0 and 1-1) are slightly more common than pure
-          Poisson suggests due to tactical/psychological factors.
-        - Very high scorelines are slightly less likely in practice.
-        Keep adjustments subtle so the model stays realistic.
-        """
-        total_expected = home_rate + away_rate
-        closeness = max(0.0, 1.0 - min(abs(home_rate - away_rate), 2.0) / 2.0)
-
+        # Dixon-Coles low-score correction: football goals are not fully
+        # independent at 0/1 goals. A conservative rho avoids overfitting a
+        # fixed league-specific parameter while correcting the most common
+        # low-score cells. The joint grid is normalized below.
+        rho = -0.08
         if home_goals == 0 and away_goals == 0:
-            # Slight 0-0 boost only when expected goals are low and teams are close
-            low_goal_factor = max(0.0, 1.0 - total_expected / 3.0)
-            return 1.0 + (0.06 * closeness * low_goal_factor)
-        if home_goals == away_goals:
-            # Very slight draw boost
-            return 1.0 + (0.04 * closeness)
-        # Let the fitted goal rates determine high-scoring outcomes. The
-        # independent Poisson probabilities already penalize extreme totals.
+            return max(0.05, 1.0 - (home_rate * away_rate * rho))
+        if home_goals == 0 and away_goals == 1:
+            return max(0.05, 1.0 + (home_rate * rho))
+        if home_goals == 1 and away_goals == 0:
+            return max(0.05, 1.0 + (away_rate * rho))
+        if home_goals == 1 and away_goals == 1:
+            return max(0.05, 1.0 - rho)
         return 1.0
 
     candidates = []
@@ -1842,6 +1836,17 @@ def _poisson_best_scoreline(home_rate, away_rate, seed=None):
         for a in range(0, max_goals + 1):
             p = float(exp(-home_rate) * (home_rate ** h) / _fac(h)) * \
                 float(exp(-away_rate) * (away_rate ** a) / _fac(a))
+            # Apply the same conservative Dixon-Coles correction used by the
+            # correct-score probability endpoint.
+            rho = -0.08
+            if h == 0 and a == 0:
+                p *= max(0.05, 1.0 - home_rate * away_rate * rho)
+            elif h == 0 and a == 1:
+                p *= max(0.05, 1.0 + home_rate * rho)
+            elif h == 1 and a == 0:
+                p *= max(0.05, 1.0 + away_rate * rho)
+            elif h == 1 and a == 1:
+                p *= max(0.05, 1.0 - rho)
             scores.append((h, a))
             weights.append(p)
             total += p
@@ -2037,7 +2042,7 @@ def save_predictions(matches, model_home=None, model_away=None, le=None, match_d
 
                     predicted_home_goals, predicted_away_goals = _poisson_best_scoreline(
                         predicted_home_rate, predicted_away_rate,
-                        seed=hash((home, away)) & 0xFFFFFFFF)
+                        seed="mode")
                 else:
                     _, predicted_home_goals, predicted_away_goals, predicted_home_rate, predicted_away_rate, _calib = \
                         predict_match_outcome(home, away, (model_home, model_away, None))
