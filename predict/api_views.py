@@ -132,8 +132,6 @@ def api_competition_teams(request):
     not depend on standings or a provider team-list endpoint: a league can have
     upcoming fixtures even when its standings feed is empty.
     """
-    from datetime import date as date_type
-    from django.core.exceptions import ValidationError
     from django.utils.dateparse import parse_date
 
     competition_code = (request.GET.get("competition") or "").strip().upper()
