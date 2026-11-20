@@ -1548,9 +1548,8 @@ def regenerate_top_picks(request):
 # Remaining views (mostly unchanged) - results, training, admin dashboard, export, etc.
 # -------------------------
 @login_required
-@login_required
 def admin_task_dashboard(request):
-    """Staff operations dashboard: compare data, fixtures and saved predictions."""
+    """Staff dashboard: report training, fixture discovery and prediction output separately."""
     from django.http import HttpResponseForbidden
     from .providers import get_provider
     from .fixture_sources import _provider_order, get_provider_diagnostic, provider_configuration
@@ -1562,107 +1561,61 @@ def admin_task_dashboard(request):
     tasks = PeriodicTask.objects.select_related("interval", "crontab").order_by("name")
     task_info = []
     for task in tasks:
-        try:
-            args = json.loads(task.args or "[]")
-        except (TypeError, ValueError):
-            args = []
-        try:
-            kwargs = json.loads(task.kwargs or "{}")
-        except (TypeError, ValueError):
-            kwargs = {}
-        task_info.append({
-            "name": task.name,
-            "task": task.task,
-            "task_label": format_task_label(task.task),
-            "enabled": task.enabled,
-            "last_run_at": task.last_run_at,
-            "interval": task.interval,
-            "crontab": task.crontab,
-            "args": args,
-            "kwargs": kwargs,
-            "last_triggered": task.date_changed,
-        })
+        try: args = json.loads(task.args or "[]")
+        except (TypeError, ValueError): args = []
+        try: kwargs = json.loads(task.kwargs or "{}")
+        except (TypeError, ValueError): kwargs = {}
+        task_info.append({"name":task.name,"task":task.task,"task_label":format_task_label(task.task),
+            "enabled":task.enabled,"last_run_at":task.last_run_at,"interval":task.interval,
+            "crontab":task.crontab,"args":args,"kwargs":kwargs,"last_triggered":task.date_changed})
 
     competition_rows = []
-    totals = {
-        "competitions": len(COMPETITIONS),
-        "training_entries": 0,
-        "predictions": 0,
-        "upcoming_predictions": 0,
-        "competitions_with_predictions": 0,
-        "competitions_without_upcoming": 0,
-    }
-    for code, name in COMPETITIONS.items():
-        df = cache.get(f"training_data_{code}")
-        training_entries = len(df) if df is not None else 0
-        qs = MatchPrediction.objects.filter(competition=code)
-        prediction_count = qs.count()
-        upcoming_count = qs.filter(match_date__gte=today).exclude(status="FINISHED").count()
-        latest_match_date = qs.order_by("-match_date").values_list("match_date", flat=True).first()
-        provider = get_provider(code)
-        diagnostics = []
-        for attempted_provider in _provider_order(code):
-            configured, credential_name = provider_configuration(attempted_provider, code)
-            diagnostic_state = get_provider_diagnostic(code, attempted_provider) or {}
-            diagnostics.append({
-                "provider": attempted_provider,
-                "configured": configured,
-                "credential_name": credential_name,
-                "status": diagnostic_state.get("status", "never_checked"),
-                "fixture_count": diagnostic_state.get("fixture_count", 0),
-                "last_checked": diagnostic_state.get("last_checked"),
-                "last_success": diagnostic_state.get("last_success"),
-                "last_match_date": diagnostic_state.get("last_match_date"),
-                "last_error": diagnostic_state.get("last_error"),
-            })
+    totals = {"competitions":len(COMPETITIONS),"training_entries":0,"predictions":0,
+        "upcoming_predictions":0,"competitions_with_predictions":0,"competitions_without_upcoming":0,
+        "competitions_with_fixtures":0,"competitions_never_checked":0}
+    for code,name in COMPETITIONS.items():
+        df=cache.get(f"training_data_{code}")
+        training_entries=len(df) if df is not None else 0
+        qs=MatchPrediction.objects.filter(competition=code)
+        prediction_count=qs.count()
+        upcoming_count=qs.filter(match_date__gte=today).exclude(status="FINISHED").count()
+        latest_match_date=qs.order_by("-match_date").values_list("match_date",flat=True).first()
+        provider=get_provider(code); diagnostics=[]
+        for p in _provider_order(code):
+            configured,credential_name=provider_configuration(p,code)
+            state=get_provider_diagnostic(code,p) or {}
+            diagnostics.append({"provider":p,"configured":configured,"credential_name":credential_name,
+                "status":state.get("status","never_checked"),"fixture_count":state.get("fixture_count",0),
+                "last_checked":state.get("last_checked"),"last_success":state.get("last_success"),
+                "last_match_date":state.get("last_match_date"),"last_error":state.get("last_error")})
+        found=[d for d in diagnostics if d["status"]=="fixtures_found"]
+        checked=[d for d in diagnostics if d["status"]!="never_checked"]
+        primary=next((d for d in diagnostics if d["provider"]==provider),diagnostics[0] if diagnostics else {})
+        fixture_status="fixtures_found" if found else (primary.get("status","never_checked"))
+        fixture_providers=[d["provider"] for d in found]
+        fixture_count=max((d["fixture_count"] for d in found),default=0)
+        if upcoming_count: coverage_status="generated"
+        elif found: coverage_status="fixtures_pending"
+        elif not checked: coverage_status="never_checked"
+        elif all(d["status"] in {"empty_response","not_configured"} for d in checked): coverage_status="no_fixtures"
+        elif any(d["status"]=="error" for d in checked): coverage_status="provider_error"
+        else: coverage_status="checked"
+        task_result=cache.get(f"prediction_coverage_result_{code}") or {}
+        totals["training_entries"]+=training_entries; totals["predictions"]+=prediction_count
+        totals["upcoming_predictions"]+=upcoming_count
+        if prediction_count: totals["competitions_with_predictions"]+=1
+        if not upcoming_count: totals["competitions_without_upcoming"]+=1
+        if found: totals["competitions_with_fixtures"]+=1
+        if not checked: totals["competitions_never_checked"]+=1
+        competition_rows.append({"code":code,"name":name,"provider":provider,"provider_diagnostics":diagnostics,
+            "training_cached":df is not None,"training_entries":training_entries,"prediction_count":prediction_count,
+            "upcoming_count":upcoming_count,"latest_match_date":latest_match_date,"coverage_status":coverage_status,
+            "fixture_status":fixture_status,"provider_fixture_count":fixture_count,"fixture_providers":fixture_providers,
+            "provider_error":primary.get("last_error"),"pipeline_result":task_result})
 
-        primary_diagnostic = next(
-            (item for item in diagnostics if item["provider"] == provider),
-            diagnostics[0] if diagnostics else {},
-        )
-        fixture_status = primary_diagnostic.get("status", "never_checked")
-        if upcoming_count:
-            coverage_status = "ready"
-        elif fixture_status == "fixtures_found":
-            coverage_status = "fixtures_no_predictions"
-        elif fixture_status in {"empty_response", "not_configured", "error"}:
-            coverage_status = "no_upcoming_fixtures"
-        else:
-            coverage_status = "trained" if training_entries else "missing"
-
-        totals["training_entries"] += training_entries
-        totals["predictions"] += prediction_count
-        totals["upcoming_predictions"] += upcoming_count
-        if prediction_count:
-            totals["competitions_with_predictions"] += 1
-        if not upcoming_count:
-            totals["competitions_without_upcoming"] += 1
-
-        competition_rows.append({
-            "code": code,
-            "name": name,
-            "provider": provider,
-            "provider_diagnostics": diagnostics,
-            "training_cached": df is not None,
-            "training_entries": training_entries,
-            "prediction_count": prediction_count,
-            "upcoming_count": upcoming_count,
-            "latest_match_date": latest_match_date,
-            "coverage_status": coverage_status,
-            "fixture_status": fixture_status,
-            "provider_fixture_count": primary_diagnostic.get("fixture_count", 0),
-            "provider_error": primary_diagnostic.get("last_error"),
-        })
-
-    recent_predictions = MatchPrediction.objects.order_by("-match_date")[:8]
-    return render(request, "predict/admin_dashboard.html", {
-        "tasks": task_info,
-        "competition_rows": competition_rows,
-        "totals": totals,
-        "recent_predictions": recent_predictions,
-        "competitions": COMPETITIONS,
-        "today": today,
-    })
+    recent_predictions=MatchPrediction.objects.order_by("-match_date")[:8]
+    return render(request,"predict/admin_dashboard.html",{"tasks":task_info,"competition_rows":competition_rows,
+        "totals":totals,"recent_predictions":recent_predictions,"competitions":COMPETITIONS,"today":today})
 
 
 def elo_rankings(request):

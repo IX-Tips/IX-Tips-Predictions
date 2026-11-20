@@ -43,6 +43,10 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
     from .views import refresh_competition_odds
 
     logger.info("Running prediction for %s on %s", competition_code, match_date or "auto")
+    def record(result):
+        cache.set(f"prediction_coverage_result_{competition_code}", result, timeout=60*60*24*14)
+        logger.info("PREDICTION_COVERAGE %s", result)
+        return result
     if not match_date:
         fixtures_by_date = fetch_upcoming_fixture_groups(
             None, competition_code, days_ahead=7,
@@ -55,8 +59,7 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
 
     if not match_dates_to_use:
         result = {"competition": competition_code, "status": "no_fixtures", "training_entries": 0, "fixture_count": 0, "saved_predictions": 0, "dates_checked": []}
-        logger.warning("PREDICTION_COVERAGE %s", result)
-        return result
+        return record(result)
 
     df = cache.get(f"training_data_{competition_code}")
     if df is None:
@@ -67,8 +70,7 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
     training_entries = len(df) if df is not None else 0
     if df is None or df.empty:
         result = {"competition": competition_code, "status": "no_training_data", "training_entries": training_entries, "fixture_count": 0, "saved_predictions": 0, "dates_checked": match_dates_to_use}
-        logger.warning("PREDICTION_COVERAGE %s", result)
-        return result
+        return record(result)
 
     model_bundle = get_or_train_model_bundle(competition_code)
     if model_bundle is None:
@@ -108,8 +110,7 @@ def predict_next_fixtures_for_competition(competition_code, match_date=None):
         "dates_checked": match_dates_to_use,
         "dates_with_fixtures": dates_with_fixtures,
     }
-    logger.info("PREDICTION_COVERAGE %s", result)
-    return result
+    return record(result)
 
 @shared_task
 def cache_training_data():
