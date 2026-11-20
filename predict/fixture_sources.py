@@ -171,7 +171,10 @@ def fetch_upcoming_fixture_groups(api_key, competition_code, days_ahead=45):
     from . import providers
 
     today = date.today()
-    last_day = today + timedelta(days=max(1, int(days_ahead)))
+    # Prediction generation is intentionally capped at seven calendar days.
+    # Keep the clamp here as a final guard for every caller.
+    bounded_days = min(7, max(1, int(days_ahead)))
+    last_day = today + timedelta(days=bounded_days)
     primary = get_provider(competition_code)
     bulk_provider = None
     season_matches = []
@@ -231,7 +234,7 @@ def fetch_upcoming_fixture_groups(api_key, competition_code, days_ahead=45):
     from .utils import find_upcoming_match_dates
     dates = find_upcoming_match_dates(
         fetch_fixture_matches_by_date, api_key, competition_code,
-        start_date=today, days_ahead=max(1, int(days_ahead)),
+        start_date=today, days_ahead=bounded_days,
     )
     grouped = {}
     for match_day in dates:
