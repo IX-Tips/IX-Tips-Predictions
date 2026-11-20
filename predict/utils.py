@@ -1138,11 +1138,15 @@ def _build_feature_row(home_team, away_team, team_profiles, h2h_profiles, league
         _normalize_team_lookup_value(home_team),
         _normalize_team_lookup_value(away_team),
     )))
-    h2h_matches = []
-    for stored_pair, stored_matches in h2h_profiles.items():
-        if tuple(sorted(_normalize_team_lookup_value(team) for team in stored_pair)) == normalized_pair:
-            h2h_matches = stored_matches
-            break
+    # Canonical profile builders store normalized pair keys, making the
+    # common lookup O(1) instead of scanning every historical matchup.
+    h2h_matches = h2h_profiles.get(normalized_pair, [])
+    if not h2h_matches:
+        # Compatibility fallback for externally supplied/legacy contexts.
+        for stored_pair, stored_matches in h2h_profiles.items():
+            if tuple(sorted(_normalize_team_lookup_value(team) for team in stored_pair)) == normalized_pair:
+                h2h_matches = stored_matches
+                break
     h2h_summary = _summarize_head_to_head(
         home_team,
         away_team,
@@ -1294,11 +1298,13 @@ def _build_profiles_from_history(history):
         home_goals = float(row["home_goals"])
         away_goals = float(row["away_goals"])
 
-        _update_team_profile(team_profiles[home_team], home_goals, away_goals, "home", match_date)
-        _update_team_profile(team_profiles[away_team], away_goals, home_goals, "away", match_date)
-        h2h_profiles[tuple(sorted((home_team, away_team)))].append({
-            "home_team": home_team,
-            "away_team": away_team,
+        home_key = _normalize_team_lookup_value(home_team) or home_team
+        away_key = _normalize_team_lookup_value(away_team) or away_team
+        _update_team_profile(team_profiles[home_key], home_goals, away_goals, "home", match_date)
+        _update_team_profile(team_profiles[away_key], away_goals, home_goals, "away", match_date)
+        h2h_profiles[tuple(sorted((home_key, away_key)))].append({
+            "home_team": home_key,
+            "away_team": away_key,
             "home_goals": home_goals,
             "away_goals": away_goals,
         })
@@ -1502,13 +1508,18 @@ def build_training_features(df, lookback=8):
         home_goals = float(row["home_goals"])
         away_goals = float(row["away_goals"])
 
-        _update_team_profile(team_profiles[home], home_goals, away_goals, "home", match_date)
-        _update_team_profile(team_profiles[away], away_goals, home_goals, "away", match_date)
-        _update_elo_ratings(elo_ratings, home, away, home_goals, away_goals,
+        # Aggregate provider variants into one team identity before updating
+        # rolling form, Elo and H2H state. Lookup-only aliases are insufficient:
+        # they can still leave duplicate partial profiles in the history store.
+        home_key = _normalize_team_lookup_value(home) or home
+        away_key = _normalize_team_lookup_value(away) or away
+        _update_team_profile(team_profiles[home_key], home_goals, away_goals, "home", match_date)
+        _update_team_profile(team_profiles[away_key], away_goals, home_goals, "away", match_date)
+        _update_elo_ratings(elo_ratings, home_key, away_key, home_goals, away_goals,
                            k_factor=32.0)
-        h2h_profiles[tuple(sorted((home, away)))].append({
-            "home_team": home,
-            "away_team": away,
+        h2h_profiles[tuple(sorted((home_key, away_key)))].append({
+            "home_team": home_key,
+            "away_team": away_key,
             "home_goals": home_goals,
             "away_goals": away_goals,
         })
