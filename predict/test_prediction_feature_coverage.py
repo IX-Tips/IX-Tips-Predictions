@@ -1,7 +1,11 @@
 from django.test import SimpleTestCase
 import pandas as pd
 
-from .utils import _estimate_goal_rate_bias, build_training_features
+from .utils import (
+    _estimate_goal_rate_bias,
+    build_training_features,
+    summarize_competition_feature_coverage,
+)
 
 
 class PredictionFeatureCoverageTests(SimpleTestCase):
@@ -85,6 +89,47 @@ class PredictionFeatureCoverageTests(SimpleTestCase):
                     _normalize_team_lookup_value(provider_name),
                     _normalize_team_lookup_value(canonical_name),
                 )
+
+    def test_competition_coverage_reports_partial_history_without_inference(self):
+        history = pd.DataFrame([
+            {"competition": "PL"},
+            {"competition": "PL"},
+            {"competition": "PD"},
+        ])
+        features = pd.DataFrame([
+            {"home_matches_seen": 0, "away_matches_seen": 0, "h2h_match_count": 0},
+            {"home_matches_seen": 4, "away_matches_seen": 2, "h2h_match_count": 1},
+            {"home_matches_seen": 1, "away_matches_seen": 5, "h2h_match_count": 0},
+        ])
+
+        coverage = summarize_competition_feature_coverage(history, features)
+
+        self.assertEqual([row["competition"] for row in coverage], ["PL", "PD"])
+        self.assertEqual(coverage[0]["fixtures"], 2)
+        self.assertEqual(coverage[0]["home_history_pct"], 50.0)
+        self.assertEqual(coverage[0]["away_history_pct"], 50.0)
+        self.assertEqual(coverage[0]["home_three_plus_pct"], 50.0)
+        self.assertEqual(coverage[0]["h2h_history_pct"], 50.0)
+        self.assertEqual(coverage[1]["home_history_pct"], 100.0)
+        self.assertEqual(coverage[1]["away_three_plus_pct"], 100.0)
+        self.assertEqual(coverage[1]["h2h_history_pct"], 0.0)
+
+    def test_competition_coverage_handles_empty_and_missing_competition(self):
+        self.assertEqual(
+            summarize_competition_feature_coverage(pd.DataFrame(), pd.DataFrame()),
+            [],
+        )
+        coverage = summarize_competition_feature_coverage(
+            pd.DataFrame([{"home_team": "A", "away_team": "B"}]),
+            pd.DataFrame([{
+                "home_matches_seen": 0,
+                "away_matches_seen": 0,
+                "h2h_match_count": 0,
+            }]),
+        )
+        self.assertEqual(coverage[0]["competition"], "UNKNOWN")
+        self.assertEqual(coverage[0]["fixtures"], 1)
+        self.assertEqual(coverage[0]["home_history_pct"], 0.0)
 
     def test_goal_rate_bias_is_shrunk_and_capped_from_holdout_residuals(self):
         actual = [1.5] * 20
