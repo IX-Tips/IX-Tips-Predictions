@@ -2496,7 +2496,7 @@ def attach_odds_to_predictions(match_predictions, odds_list):
     updated = 0
     # basic name normalization helper
     def normalize(name):
-        return name.lower().replace(".", "").replace("fc", "").strip()
+        return _normalize_team_lookup_value(name) or str(name or "").lower().replace(".", "").replace("fc", "").strip()
 
     # Build mapping from normalized names to MatchPrediction(s)
     mp_map = {}
@@ -2546,11 +2546,11 @@ def attach_odds_to_predictions(match_predictions, odds_list):
                     for o in outcomes:
                         n = o.get("name", "").lower()
                         p = o.get("price")
-                        if normalize(n) == normalize(home) and odds_obj:
+                        if normalize(n) == normalize(mp.home_team) and odds_obj:
                             odds_obj.home_win = p
                         elif n == "draw" and odds_obj:
                             odds_obj.draw = p
-                        elif normalize(n) == normalize(away) and odds_obj:
+                        elif normalize(n) == normalize(mp.away_team) and odds_obj:
                             odds_obj.away_win = p
                 elif key_m in ("over_under", "total_goals"):
                     for o in outcomes:
