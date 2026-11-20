@@ -9,7 +9,8 @@ class TeamLogoFallbackTests(SimpleTestCase):
     @patch("predict.constants.cache.get")
     def test_uses_competition_country_flag_when_provider_has_no_team_crest(self, cache_get):
         cache_get.return_value = {"shortName": "Example FC", "crest": None}
-        metadata = get_team_metadata("Example FC", "TUR")
+        with patch("predict.constants.cache.set"):
+            metadata = get_team_metadata("Example FC", "TUR")
         self.assertEqual(metadata["crest"], "https://flagcdn.com/w160/tr.png")
 
     @patch("predict.constants.cache.get")
