@@ -1063,7 +1063,9 @@ def build_market_pick_rows(group_key=None, market_name=None, scope_key=None, sor
             selected_code = "PL"
 
     league_table = get_league_table(selected_code)
-    top_predictions = get_top_predictions(limit=10)
+    # The scheduled prediction task persists fixture predictions; page rendering
+    # must not trigger a fresh model-backed top-prediction calculation.
+    top_predictions = []
 
     display_data = []
     for p in predictions:
