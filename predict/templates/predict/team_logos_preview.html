@@ -1,67 +1,42 @@
 {% extends "predict/base.html" %}
 {% load static %}
-
-{% block title %}Live Predictions{% endblock %}
-
+{% block title %}Team Logos Preview{% endblock %}
 {% block content %}
-
-  <title>Team Logos Preview</title>
-
-  <style>
-    .team-box {
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      padding: 10px;
-      margin-bottom: 10px;
-      
-      display: flex;
-      align-items: center;
-    }
-    .team-logo {
-      width: 32px;
-      height: 32px;
-      object-fit: contain;
-      margin-right: 10px;
-    }
-    .comp-header {
-      display: flex;
-      align-items: center;
-      
-      padding: 10px 15px;
-      border-radius: 6px;
-      margin-top: 25px;
-    }
-    .comp-logo {
-      width: 36px;
-      height: 36px;
-      margin-right: 10px;
-      object-fit: contain;
-    }
-  </style>
-</head>
-
+<style>
+.logo-league{margin:24px 0;padding:16px;border:1px solid var(--border-color,#333);border-radius:12px}
+.logo-league-header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.comp-logo{width:36px;height:36px;object-fit:contain}
+.logo-team{border:1px solid var(--border-color,#333);border-radius:10px;padding:12px;height:100%}
+.team-logo{width:48px;height:48px;object-fit:contain}
+.logo-url{font-size:.72rem;word-break:break-all;color:var(--text-secondary)}
+</style>
 <div class="container py-4">
-
-  <h3 class="mb-4">Team Logos by Competition</h3>
-
+  <h3 class="mb-3">Team Logos by Competition</h3>
+  <p class="text-muted">Shows the currently resolved crest and logo-source metadata. Leagues with unavailable standings may have no teams listed.</p>
   {% for group in preview_data %}
-    <div class="comp-header">
-      <img src="{{ group.logo }}" alt="{{ group.competition_code }}" class="comp-logo">
-      <strong>{{ group.competition }}</strong>
-    </div>
-    <div class="row mt-2">
-      {% for team in group.teams %}
-        <div class="col-md-4">
-          <div class="team-box">
-            <img src="{{ team.crest }}" class="team-logo" alt="{{ team.short }}">
-            <span>{{ team.short }}</span>
+    <section class="logo-league">
+      <div class="logo-league-header">
+        {% if group.logo %}<img src="{{ group.logo }}" alt="" class="comp-logo">{% endif %}
+        <div><strong>{{ group.competition }}</strong><div class="text-muted small">{{ group.competition_code }} · {{ group.teams|length }} teams</div></div>
+      </div>
+      {% if group.teams %}
+      <div class="row g-3">
+        {% for team in group.teams %}
+          <div class="col-sm-6 col-lg-4">
+            <div class="logo-team">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                {% if team.crest %}<img src="{{ team.crest }}" class="team-logo" alt="{{ team.name }}" loading="lazy">
+                {% else %}<span class="team-logo text-muted d-flex align-items-center">No logo</span>{% endif %}
+                <strong>{{ team.name }}</strong>
+              </div>
+              <div class="small text-muted">Source: {{ team.logo_source }}</div>
+              <div class="logo-url">{{ team.crest|default:"No crest URL resolved" }}</div>
+            </div>
           </div>
-        </div>
-      {% endfor %}
-    </div>
+        {% endfor %}
+      </div>
+      {% else %}<p class="text-muted mb-0">No teams returned from standings for this competition.</p>{% endif %}
+    </section>
   {% endfor %}
-
 </div>
-
 {% endblock content %}
-
