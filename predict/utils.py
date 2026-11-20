@@ -1428,16 +1428,24 @@ def build_training_features(df, lookback=8):
     h2h_profiles = defaultdict(list)
     elo_ratings = defaultdict(lambda: 1500.0)
     feature_rows = []
+    prior_home_goals = []
+    prior_away_goals = []
 
     for _, row in history.iterrows():
         home = row["home_team"]
         away = row["away_team"]
         match_date = row.get("utc_date")
+        # League goal baselines must also be time-aware. Using full-season
+        # averages here leaked future scoring levels into earlier training rows.
+        row_defaults = {
+            "home_goals": float(np.mean(prior_home_goals)) if prior_home_goals else 1.4,
+            "away_goals": float(np.mean(prior_away_goals)) if prior_away_goals else 1.1,
+        }
         odds_row = {"avgH": row.get("avgH"), "avgD": row.get("avgD"),
                      "avgA": row.get("avgA"), "over25": row.get("over25")}
         feature_rows.append(
             _build_feature_row(
-                home, away, team_profiles, h2h_profiles, league_defaults,
+                home, away, team_profiles, h2h_profiles, row_defaults,
                 lookback, match_date, elo_ratings,
                 odds_row=odds_row,
             )
@@ -1456,6 +1464,8 @@ def build_training_features(df, lookback=8):
             "home_goals": home_goals,
             "away_goals": away_goals,
         })
+        prior_home_goals.append(home_goals)
+        prior_away_goals.append(away_goals)
 
     X = pd.DataFrame(feature_rows, columns=expected_columns).fillna(0)
     y_home = history["home_goals"].astype(float)
