@@ -3327,28 +3327,36 @@ def ajax_league_table(request):
 
 
 def team_logos_preview(request):
-    grouped_teams = defaultdict(list)
-
-    # NOTE: cache.iter_keys may not exist depending on your cache backend
-    # this portion retains earlier logic but might need adaptation for your cache
-    for comp_code in COMPETITIONS:
-        # scan keys in cache is backend-dependent; keep simple: attempt to load from known teams
-        pass
-
-    # Fallback simple preview (if cache keys scanning not available)
     preview_data = []
     for comp_code, comp_name in competitions.items():
+        teams = []
+        try:
+            table = get_league_table(comp_code) or []
+        except Exception:
+            logger.exception("TEAM_LOGO_PREVIEW_TABLE_FAILED competition=%s", comp_code)
+            table = []
+        for row in table:
+            team = row.get("team") or {}
+            name = team.get("name") or row.get("name")
+            if not name:
+                continue
+            meta = get_team_metadata(name, comp_code) or {}
+            crest = meta.get("crest") or match_team_logo(name, comp_code)
+            teams.append({
+                "name": name,
+                "short": meta.get("shortName") or name,
+                "crest": crest,
+                "logo_source": meta.get("logo_source") or ("provider-cache" if crest else "missing"),
+            })
         preview_data.append({
             "competition": comp_name,
             "competition_code": comp_code,
             "logo": resolve_competition_logo(comp_code),
-            "teams": []
+            "teams": teams,
         })
-
     return render(request, "predict/team_logos_preview.html", {
         "preview_data": preview_data
     })
-
 
 def match_team_logo(team_name, competition_code=None):
     return get_football_team_logo_url(team_name, competition_code) or static("logos/default.png")
