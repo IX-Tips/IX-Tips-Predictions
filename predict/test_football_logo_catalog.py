@@ -38,6 +38,23 @@ class FootballLogoCatalogTests(SimpleTestCase):
         url = get_football_team_logo_url("Man City", "PL")
         self.assertTrue(url.startswith("https://assets.football-logos.cc/logos/england/512x512/manchester-city."))
 
+    def test_resolves_provider_aliases_across_competitions(self):
+        cases = [
+            ("Athletic Club", "PD", "/spain/512x512/athletic-club-bilbao."),
+            ("Paris Saint-Germain", "FL1", "/france/512x512/psg."),
+            ("Olympique Marseille", "FL1", "/france/512x512/marseille."),
+            ("Olympique Lyon", "FL1", "/france/512x512/olympique-lyonnais."),
+            ("Sporting Lisbon", "PPL", "/portugal/512x512/sporting-cp."),
+            ("BVB", "BL1", "/germany/512x512/borussia-dortmund."),
+            ("Al Hilal Saudi", "SAU", "/saudi-arabia/512x512/al-hilal."),
+            ("Athletico PR", "BSA", "/brazil/512x512/athletico-paranaense."),
+        ]
+        for team_name, competition, expected_path in cases:
+            with self.subTest(team_name=team_name):
+                url = get_football_team_logo_url(team_name, competition)
+                self.assertIsNotNone(url)
+                self.assertIn(expected_path, url)
+
     def test_uses_catalog_team_logo_when_provider_has_no_crest(self):
         with patch("predict.constants.cache.get", return_value={"shortName": "Liverpool FC", "crest": None}):
             with patch("predict.constants.cache.set"):
