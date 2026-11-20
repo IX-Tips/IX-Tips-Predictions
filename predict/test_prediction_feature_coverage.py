@@ -32,6 +32,23 @@ class PredictionFeatureCoverageTests(SimpleTestCase):
         self.assertEqual(features.iloc[1]["away_matches_seen"], 0)
         self.assertEqual(features.iloc[1]["h2h_match_count"], 0)
 
+    def test_provider_aliases_resolve_to_the_same_team_identity(self):
+        from .utils import _normalize_team_lookup_value
+
+        equivalent_names = [
+            ("Man Utd", "Manchester United FC"),
+            ("Athletic Club", "Athletic Bilbao"),
+            ("Charleroi", "Royal Charleroi S.C."),
+            ("Sporting Lisbon", "Sporting CP"),
+            ("Olympique Marseille", "Marseille"),
+        ]
+        for provider_name, canonical_name in equivalent_names:
+            with self.subTest(provider_name=provider_name):
+                self.assertEqual(
+                    _normalize_team_lookup_value(provider_name),
+                    _normalize_team_lookup_value(canonical_name),
+                )
+
     def test_goal_rate_bias_is_shrunk_and_capped_from_holdout_residuals(self):
         actual = [1.5] * 20
         predicted = [1.0] * 20
