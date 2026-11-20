@@ -1318,7 +1318,7 @@ def _build_profiles_from_history(history):
     return dict(team_profiles), dict(h2h_profiles)
 
 
-GLOBAL_ELO_CACHE_KEY = "global_elo_ratings_v1"
+GLOBAL_ELO_CACHE_KEY = "global_elo_ratings_v2"
 
 
 def _get_global_elo():
@@ -1378,7 +1378,8 @@ def compute_cross_league_elo():
     league_elos = defaultdict(list)
 
     for m in all_matches:
-        home, away = m["home_team"], m["away_team"]
+        home = _normalize_team_lookup_value(m["home_team"]) or m["home_team"]
+        away = _normalize_team_lookup_value(m["away_team"]) or m["away_team"]
         hg, ag = m["home_goals"], m["away_goals"]
         comp = m["competition"]
         _update_elo_ratings(elo, home, away, hg, ag, k_factor=24.0)
