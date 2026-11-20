@@ -34,13 +34,15 @@ class FootballLogoCatalogTests(SimpleTestCase):
 
     def test_uses_catalog_team_logo_when_provider_has_no_crest(self):
         with patch("predict.constants.cache.get", return_value={"shortName": "Liverpool FC", "crest": None}):
-            metadata = get_team_metadata("Liverpool FC", "PL")
+            with patch("predict.constants.cache.set"):
+                metadata = get_team_metadata("Liverpool FC", "PL")
         self.assertTrue(metadata["crest"].startswith("https://assets.football-logos.cc/logos/england/256x256/liverpool."))
         self.assertEqual(metadata["logo_source"], "football-logos.cc")
 
     def test_uses_country_flag_when_team_is_not_in_catalog(self):
         with patch("predict.constants.cache.get", return_value={"shortName": "Unknown FC", "crest": None}):
-            metadata = get_team_metadata("Unknown FC", "TUR")
+            with patch("predict.constants.cache.set"):
+                metadata = get_team_metadata("Unknown FC", "TUR")
         self.assertEqual(metadata["crest"], "https://flagcdn.com/w160/tr.png")
 
     def test_ambiguous_global_team_name_is_not_guessed(self):
