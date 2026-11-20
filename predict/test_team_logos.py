@@ -16,7 +16,7 @@ class FootballLogoNameNormalizationTests(TestCase):
 
 
 class ApiTeamLogoFallbackTests(TestCase):
-    def test_prefers_provider_crest(self):
+    def test_prefers_catalogue_badge(self):
         from predict.api_views import _team_logo
 
         with patch("predict.api_views.get_football_team_logo_url", return_value="catalog.png"):
@@ -46,3 +46,16 @@ class ApiTeamLogoFallbackTests(TestCase):
         with patch("predict.api_views.get_football_team_logo_url", return_value=None):
             with patch("predict.api_views.country_flag_url", return_value="flag.png"):
                 self.assertEqual(_team_logo("Unknown Club", "PL", {}), "flag.png")
+
+    def test_tries_provider_short_name_before_using_provider_crest(self):
+        from predict.api_views import _team_logo
+
+        with patch(
+            "predict.api_views.get_football_team_logo_url",
+            side_effect=[None, "short-name-catalog.png"],
+        ):
+            with patch("predict.api_views.country_flag_url", return_value="flag.png"):
+                self.assertEqual(
+                    _team_logo("Arsenal Football Club", "PL", {"shortName": "Arsenal", "crest": "provider.png"}),
+                    "short-name-catalog.png",
+                )
