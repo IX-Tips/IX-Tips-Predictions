@@ -91,6 +91,15 @@ class PredictionsWindowAndLeagueFilterTests(TestCase):
         self.assertEqual(context["selected_date"], past_day.isoformat())
         self.assertEqual([row["home_team"] for row in context["predictions"]], ["historic Home"])
 
+
+    def test_default_date_prefers_nearest_upcoming_over_old_history(self):
+        self.add_prediction("old", "PL", self.today - timedelta(days=20))
+        self.add_prediction("next", "PL", self.today + timedelta(days=2))
+
+        context = self.get_context()
+
+        self.assertEqual(context["selected_date"], (self.today + timedelta(days=2)).isoformat())
+
     def test_duplicate_provider_rows_render_once_without_rewriting_snapshots(self):
         day = self.today + timedelta(days=1)
         first = MatchPrediction.objects.create(
