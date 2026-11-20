@@ -2228,23 +2228,22 @@ def save_predictions(matches, model_home=None, model_away=None, le=None, match_d
             competition = competition_code or match.get("competition")
             canonical_id = canonical_fixture_match_id(competition, mdate, home, away)
 
-            # Resolve legacy rows by fixture identity before running inference.
-            # Provider-specific IDs must never create a second prediction row.
+            # Resolve a prior row by canonical ID or normalized team identity.
+            # It will be refreshed below rather than treated as permanently covered.
+            existing_obj = None
             if use_db:
-                existing = MatchPrediction.objects.filter(
-                    competition=competition,
-                    match_date=mdate,
-                ).order_by("pk")
-                normalized_home = _normalize_team_lookup_value(home)
-                normalized_away = _normalize_team_lookup_value(away)
-                existing = next((
-                    row for row in existing
-                    if _normalize_team_lookup_value(row.home_team) == normalized_home
-                    and _normalize_team_lookup_value(row.away_team) == normalized_away
-                ), None)
-                if existing:
-                    saved.append(existing)
-                    continue
+                existing_obj = MatchPrediction.objects.filter(match_id=canonical_id).first()
+                if existing_obj is None:
+                    rows = MatchPrediction.objects.filter(
+                        competition=competition, match_date=mdate,
+                    ).order_by("pk")
+                    normalized_home = _normalize_team_lookup_value(home)
+                    normalized_away = _normalize_team_lookup_value(away)
+                    existing_obj = next((
+                        row for row in rows
+                        if _normalize_team_lookup_value(row.home_team) == normalized_home
+                        and _normalize_team_lookup_value(row.away_team) == normalized_away
+                    ), None)
 
             # If models provided: prepare input for prediction
             predicted_home_rate = None
@@ -2310,30 +2309,37 @@ def save_predictions(matches, model_home=None, model_away=None, le=None, match_d
 
                 # get_or_create protects the first forecast if duplicate
                 # scheduled jobs race after the initial existence check.
-                obj, created = MatchPrediction.objects.get_or_create(
-                    match_id=canonical_id,
-                    defaults={
-                        "match_date": mdate,
-                        "competition": competition,
-                        "home_team": home,
-                        "away_team": away,
-                        "predicted_home_goals": predicted_home_goals,
-                        "predicted_away_goals": predicted_away_goals,
-                        "predicted_home_rate": predicted_home_rate,
-                        "predicted_away_rate": predicted_away_rate,
-                        "predicted_result": predicted_result,
-                        "market_over_1_5": market_over_1_5,
-                        "market_over_2_5": market_over_2_5,
-                        "market_under_1_5": market_under_1_5,
-                        "market_under_2_5": market_under_2_5,
-                        "market_gg": market_gg,
-                        "market_nogg": market_nogg,
-                        "odds_home": odds_home,
-                        "odds_draw": odds_draw,
-                        "odds_away": odds_away,
-                        "status": saved_status,
-                    }
-                )
+                prediction_fields = {
+                    "match_date": mdate, "competition": competition,
+                    "home_team": home, "away_team": away,
+                    "predicted_home_goals": predicted_home_goals,
+                    "predicted_away_goals": predicted_away_goals,
+                    "predicted_home_rate": predicted_home_rate,
+                    "predicted_away_rate": predicted_away_rate,
+                    "predicted_result": predicted_result,
+                    "market_over_1_5": market_over_1_5,
+                    "market_over_2_5": market_over_2_5,
+                    "market_under_1_5": market_under_1_5,
+                    "market_under_2_5": market_under_2_5,
+                    "market_gg": market_gg, "market_nogg": market_nogg,
+                    "odds_home": odds_home, "odds_draw": odds_draw,
+                    "odds_away": odds_away, "status": saved_status,
+                }
+                if existing_obj:
+                    obj = existing_obj
+                    for field, value in prediction_fields.items():
+                        setattr(obj, field, value)
+                    obj.match_id = canonical_id
+                    obj.save()
+                    created = False
+                else:
+                    obj, created = MatchPrediction.objects.get_or_create(
+                        match_id=canonical_id, defaults=prediction_fields,
+                    )
+                    if not created:
+                        for field, value in prediction_fields.items():
+                            setattr(obj, field, value)
+                        obj.save()
                 # If actual_result_map provided and contains this fixture, update actuals & accuracy
                 if actual_result_map:
                     key = (home, away)
