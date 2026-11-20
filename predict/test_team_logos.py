@@ -47,6 +47,28 @@ class ApiTeamLogoFallbackTests(TestCase):
             with patch("predict.api_views.country_flag_url", return_value="flag.png"):
                 self.assertEqual(_team_logo("Unknown Club", "PL", {}), "flag.png")
 
+    def test_provider_crest_is_used_before_a_cached_country_flag(self):
+        from predict.api_views import _team_logo
+
+        metadata = {
+            "crest": "https://flagcdn.com/w160/gb-eng.png",
+            "provider_crest": "https://provider.example/club.png",
+        }
+        with patch("predict.api_views.get_football_team_logo_url", return_value=None):
+            with patch("predict.api_views.country_flag_url", return_value="flag.png"):
+                self.assertEqual(
+                    _team_logo("Unknown Club", "PL", metadata),
+                    "https://provider.example/club.png",
+                )
+
+    def test_cached_country_flag_is_only_used_as_last_resort(self):
+        from predict.api_views import _team_logo
+
+        metadata = {"crest": "https://flagcdn.com/w160/gb-eng.png"}
+        with patch("predict.api_views.get_football_team_logo_url", return_value=None):
+            with patch("predict.api_views.country_flag_url", return_value="flag.png"):
+                self.assertEqual(_team_logo("Unknown Club", "PL", metadata), "flag.png")
+
     def test_tries_provider_short_name_before_using_provider_crest(self):
         from predict.api_views import _team_logo
 

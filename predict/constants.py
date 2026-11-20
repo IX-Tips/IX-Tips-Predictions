@@ -481,7 +481,7 @@ def _football_logo_url(country_slug, item):
         return None
     return (
         "https://assets.football-logos.cc/logos/"
-        f"{country_slug}/256x256/{item['slug']}.{item['hash']}.png"
+        f"{country_slug}/512x512/{item['slug']}.{item['hash']}.png"
     )
 
 
@@ -489,27 +489,167 @@ def _football_logo_url(country_slug, item):
 # normalized names. Keep aliases explicit: fuzzy matching can assign the
 # wrong crest to clubs with similar names.
 FOOTBALL_TEAM_LOGO_ALIASES = {
+    # England
     "man city": "manchester city",
-    "manchester city fc": "manchester city",
+    "city": "manchester city",
     "man utd": "manchester united",
-    "manchester united fc": "manchester united",
-    "brighton": "brighton",
-    "brighton and hove albion": "brighton",
+    "man united": "manchester united",
     "spurs": "tottenham",
-    "tottenham": "tottenham",
+    "tottenham hotspur": "tottenham",
     "wolves": "wolverhampton wanderers",
-    "west ham": "west ham united",
-    "newcastle": "newcastle united",
-    "forest": "nottingham forest",
-    "celta": "celta",
+    "west ham united": "west ham",
+    "newcastle united": "newcastle",
+    "nottingham forest": "nottingham forest",
+    "nottm forest": "nottingham forest",
+    "sheffield utd": "sheffield united",
+    "sheff utd": "sheffield united",
+    "sheffield weds": "sheffield wednesday",
+    "qpr": "queens park rangers",
+    "west brom": "west bromwich albion",
+    "leicester city": "leicester",
+    "luton": "luton town",
+    "ipswich town": "ipswich",
+    "afc bournemouth": "bournemouth",
+    "brighton and hove albion": "brighton",
+    "cardiff": "cardiff city",
+    "wrexham": "wrexham",
+    "blackburn": "blackburn rovers",
+    "bolton": "bolton wanderers",
+    "middlesbrough fc": "middlesbrough",
+    "derby": "derby county",
+    "portsmouth fc": "portsmouth",
+    "preston": "preston north end",
+    "stoke": "stoke city",
+    "swansea": "swansea city",
+    "watford fc": "watford",
+    "coventry": "coventry city",
+    "plymouth": "plymouth argyle",
+    "oxford": "oxford united",
+    "bristol rovers fc": "bristol rovers",
+    "notts": "notts county",
+    # Spain
+    "athletic": "athletic bilbao",
     "athletic club": "athletic bilbao",
+    "athletic bilbao": "athletic bilbao",
     "barca": "barcelona",
+    "fc barcelona": "barcelona",
     "atleti": "atletico madrid",
-    "inter": "inter",
+    "atletico": "atletico madrid",
+    "real sociedad de futbol": "real sociedad",
+    "deportivo alaves": "deportivo alaves",
+    "alaves": "deportivo alaves",
+    "rayo": "rayo vallecano",
+    "las palmas ud": "las palmas",
+    "sporting gijon": "sporting gijon",
+    "real valladolid cf": "real valladolid",
+    "racing de santander": "racing santander",
+    # Italy
     "ac milan": "milan",
+    "internazionale": "inter",
+    "inter milan": "inter",
+    "juventus fc": "juventus",
+    "roma": "as roma",
+    "napoli fc": "napoli",
+    "hellas": "hellas verona",
+    "verona": "hellas verona",
+    "sassuolo calcio": "sassuolo",
+    "torino fc": "torino",
+    "udinese calcio": "udinese",
+    # Germany
     "bayern": "bayern munich",
-    "psg": "paris saint germain",
-    "marseille": "olympique marseille",
+    "fc bayern munich": "bayern munich",
+    "bvb": "borussia dortmund",
+    "dortmund": "borussia dortmund",
+    "gladbach": "borussia monchengladbach",
+    "monchengladbach": "borussia monchengladbach",
+    "leverkusen": "bayer leverkusen",
+    "rb leipzig": "rb leipzig",
+    "koln": "cologne",
+    "fc koln": "cologne",
+    "st pauli": "st pauli",
+    "wolfsburg": "wolfsburg",
+    # France
+    "psg": "psg",
+    "paris saint germain": "psg",
+    "paris saint-germain": "psg",
+    "olympique marseille": "marseille",
+    "om": "marseille",
+    "olympique lyon": "olympique lyonnais",
+    "ol": "olympique lyonnais",
+    "monaco": "as monaco",
+    "rc lens": "rc lens",
+    "losc": "lille",
+    "saint etienne": "as saint etienne",
+    # Netherlands
+    "psv": "psv eindhoven",
+    "psv eindhoven": "psv eindhoven",
+    "feyenoord rotterdam": "feyenoord",
+    "fc twente": "twente",
+    "heerenveen": "sc heerenveen",
+    "nec": "n e c nijmegen",
+    # Portugal
+    "sporting lisbon": "sporting cp",
+    "sporting clube de portugal": "sporting cp",
+    "sl benfica": "benfica",
+    "fc porto": "fc porto",
+    "vitoria guimaraes": "vitoria de guimaraes",
+    "braga": "sc braga",
+    # Belgium / Scotland / Turkey / Greece
+    "anderlecht": "rsc anderlecht",
+    "royal antwerp": "royal antwerp",
+    "antwerp": "royal antwerp",
+    "club brugge kv": "club brugge",
+    "genk": "krc genk",
+    "gent": "kaa gent",
+    "union sg": "union saint gilloise",
+    "celtic fc": "celtic",
+    "rangers fc": "rangers",
+    "hearts fc": "hearts",
+    "hibs": "hibernian",
+    "besiktas": "besiktas",
+    "fener": "fenerbahce",
+    "fenerbahce istanbul": "fenerbahce",
+    "galatasaray istanbul": "galatasaray",
+    "trabzonspor": "trabzonspor",
+    "olympiakos": "olympiacos",
+    "aek": "aek athens",
+    "paok": "paok",
+    "panathinaikos fc": "panathinaikos",
+    # Saudi Arabia
+    "al hilal saudi": "al hilal",
+    "al nassr fc": "al nassr",
+    "al ahli saudi": "al ahli",
+    "al ittihad jeddah": "al ittihad",
+    "al shabab riyadh": "al shabab",
+    # Brazil
+    "athletico pr": "athletico paranaense",
+    "atletico mineiro": "atletico mineiro",
+    "galo": "atletico mineiro",
+    "corinthians sp": "corinthians",
+    "palmeiras sp": "palmeiras",
+    "flamengo rj": "flamengo",
+    "sao paulo fc": "sao paulo",
+    "internacional rs": "internacional",
+    "gremio": "gremio",
+    "santos": "santos fc",
+    "rb bragantino": "rb bragantino",
+    # Argentina / Mexico / USA / Japan
+    "river": "river plate",
+    "boca": "boca juniors",
+    "racing club de avellaneda": "racing club",
+    "independiente de avellaneda": "independiente",
+    "club america": "club america",
+    "america": "club america",
+    "pumas": "unam pumas",
+    "tigres": "tigres uanl",
+    "chivas": "cd guadalajara",
+    "guadalajara": "cd guadalajara",
+    "la galaxy": "los angeles galaxy",
+    "lafc": "los angeles football club",
+    "nycfc": "new york city football club",
+    "new york city fc": "new york city football club",
+    "yokohama marinos": "yokohama f marinos",
+    "urawa": "urawa reds",
 }
 
 
@@ -563,26 +703,55 @@ def get_football_competition_logo_url(competition_code):
     return _football_logo_url(country_slug, item) if item else None
 
 
+def _is_country_flag_url(url):
+    return str(url or "").startswith("https://flagcdn.com/")
+
+
 def get_team_metadata(name, competition_code=None):
     key = team_meta_cache_key(name)
     meta = cache.get(key, {"shortName": name, "crest": "", "competition": competition_code})
     fallback_competition = competition_code or meta.get("competition")
 
-    # Prefer a verified bundled-catalog match over old provider crest URLs.
-    # Several provider crest endpoints are incomplete or return broken images.
+    # A previous request may have cached a country flag in "crest". Preserve
+    # real provider crests separately so a cached flag never masks them.
+    cached_crest = meta.get("crest")
+    provider_crest = meta.get("provider_crest")
+    if cached_crest and not _is_country_flag_url(cached_crest):
+        provider_crest = provider_crest or cached_crest
+
+    # Always check the bundled club catalogue before accepting any fallback.
     team_logo = get_football_team_logo_url(name, fallback_competition)
+    if not team_logo and meta.get("shortName") and meta.get("shortName") != name:
+        team_logo = get_football_team_logo_url(meta["shortName"], fallback_competition)
     if team_logo:
-        if meta.get("crest") != team_logo or meta.get("logo_source") != "football-logos.cc":
-            meta = {**meta, "crest": team_logo, "logo_source": "football-logos.cc"}
-            cache.set(key, meta, timeout=TEAM_METADATA_CACHE_TIMEOUT)
+        meta = {
+            **meta,
+            "crest": team_logo,
+            "logo_source": "football-logos.cc",
+        }
+        cache.set(key, meta, timeout=TEAM_METADATA_CACHE_TIMEOUT)
         return meta
 
-    if meta.get("crest"):
+    # Provider badge is the second choice. Never mistake a cached flag for one.
+    if provider_crest and not _is_country_flag_url(provider_crest):
+        meta = {
+            **meta,
+            "crest": provider_crest,
+            "provider_crest": provider_crest,
+            "logo_source": meta.get("logo_source") if meta.get("logo_source") not in (
+                None, "competition-country-flag", "football-logos.cc"
+            ) else "provider",
+        }
+        cache.set(key, meta, timeout=TEAM_METADATA_CACHE_TIMEOUT)
         return meta
 
-    # If no verified club logo matches, use the competition country flag.
+    # Country flag is strictly the final fallback when no club badge exists.
     flag = country_flag_url(fallback_competition) if fallback_competition else None
     if flag:
-        meta = {**meta, "crest": flag, "logo_source": "competition-country-flag"}
+        meta = {
+            **meta,
+            "crest": flag,
+            "logo_source": "competition-country-flag",
+        }
         cache.set(key, meta, timeout=TEAM_METADATA_CACHE_TIMEOUT)
     return meta

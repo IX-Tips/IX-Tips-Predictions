@@ -19,7 +19,8 @@ class TeamLogoFallbackTests(SimpleTestCase):
             "shortName": "Example FC",
             "crest": "https://example.com/team.png",
         }
-        metadata = get_team_metadata("Example FC", "TUR")
+        with patch("predict.constants.cache.set"):
+            metadata = get_team_metadata("Example FC", "TUR")
         self.assertEqual(metadata["crest"], "https://example.com/team.png")
 
     @patch("predict.constants.cache.get")

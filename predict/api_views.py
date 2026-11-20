@@ -31,14 +31,23 @@ competitions = COMPETITIONS
 
 
 def _team_logo(team_name, competition_code, metadata=None):
-    """Prefer a catalogue badge, then provider crest, then the competition flag."""
+    """Resolve club badge first, provider badge second, country flag last."""
     metadata = metadata or {}
+
+    # Do not let an earlier cached flag prevent a catalogue lookup for this team.
     catalogue_logo = get_football_team_logo_url(team_name, competition_code)
     if not catalogue_logo and metadata.get("shortName"):
         catalogue_logo = get_football_team_logo_url(
             metadata["shortName"], competition_code
         )
-    return catalogue_logo or metadata.get("crest") or country_flag_url(competition_code)
+    if catalogue_logo:
+        return catalogue_logo
+
+    provider_logo = metadata.get("provider_crest") or metadata.get("crest")
+    if provider_logo and not str(provider_logo).startswith("https://flagcdn.com/"):
+        return provider_logo
+
+    return country_flag_url(competition_code)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
