@@ -2695,7 +2695,7 @@ def auto_track_combo_slip(context, size, market_filter="", style="safe", return_
 
 def predictions_view(request):
     today = timezone.localdate()
-    prediction_window_end = today + timedelta(days=7)
+    prediction_window_end = today + timedelta(days=6)
     requested_match_date = request.GET.get("match_date")
     match_date = requested_match_date
     predictions = MatchPrediction.objects.select_related("odds").all().order_by("match_date")
@@ -2715,8 +2715,10 @@ def predictions_view(request):
     if not match_date:
         predictions = predictions.filter(match_date__lte=prediction_window_end)
         available_dates = list(
-            MatchPrediction.objects.filter(match_date__gte=today)
-            .order_by("match_date")
+            MatchPrediction.objects.filter(
+                match_date__gte=today,
+                match_date__lte=prediction_window_end,
+            ).order_by("match_date")
             .values_list("match_date", flat=True)
             .distinct()
         )
