@@ -1,0 +1,246 @@
+{% extends "predict/base.html" %}
+{% load static %}
+
+{% block title %}Operations Dashboard | IX-Tips{% endblock %}
+
+{% block content %}
+<style>
+.admin-ops{max-width:1500px;margin:0 auto;padding:22px 0 48px;color:var(--text-color,#172033)}
+.admin-ops .ops-header{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:24px;flex-wrap:wrap}
+.admin-ops h1{font-size:clamp(1.55rem,3vw,2.15rem);font-weight:800;letter-spacing:-.04em;margin:0 0 6px}
+.admin-ops .muted{color:var(--text-secondary,#7b8495);font-size:.88rem}
+.admin-ops .eyebrow{font-size:.72rem;text-transform:uppercase;letter-spacing:.12em;font-weight:800;color:#64748b}
+.admin-ops .ops-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:22px}
+.admin-ops .metric,.admin-ops .panel{background:var(--light,#fff);border:1px solid rgba(148,163,184,.22);border-radius:16px;box-shadow:0 8px 26px rgba(15,23,42,.045)}
+.admin-ops .metric{padding:18px 20px}
+.admin-ops .metric-label{font-size:.78rem;color:var(--text-secondary,#64748b);font-weight:700}
+.admin-ops .metric-value{font-size:1.85rem;font-weight:850;letter-spacing:-.04em;margin:7px 0 2px}
+.admin-ops .panel{padding:20px;margin-bottom:18px;min-width:0}
+.admin-ops .panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.admin-ops h2{font-size:1.05rem;font-weight:800;margin:0}
+.admin-ops .table-wrap{overflow-x:auto}
+.admin-ops table{width:100%;border-collapse:collapse;min-width:760px;font-size:.84rem}
+.admin-ops th{text-align:left;color:var(--text-secondary,#64748b);font-size:.7rem;text-transform:uppercase;letter-spacing:.07em;padding:11px 12px;border-bottom:1px solid rgba(148,163,184,.22);white-space:nowrap}
+.admin-ops td{padding:13px 12px;border-bottom:1px solid rgba(148,163,184,.13);vertical-align:middle}
+.admin-ops tr:last-child td{border-bottom:0}
+.admin-ops .comp-name{font-weight:750}
+.admin-ops .comp-code{font-size:.72rem;color:var(--text-secondary,#64748b);margin-left:5px}
+.admin-ops .pill{display:inline-flex;align-items:center;padding:4px 9px;border-radius:999px;font-size:.7rem;font-weight:800;white-space:nowrap}
+.admin-ops .pill.ready{background:#dcfce7;color:#166534}.admin-ops .pill.trained{background:#fef3c7;color:#92400e}.admin-ops .pill.missing{background:#fee2e2;color:#991b1b}
+.admin-ops .pill.enabled{background:#dcfce7;color:#166534}.admin-ops .pill.disabled{background:#e2e8f0;color:#475569}
+.admin-ops .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.admin-ops .btn{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:9px;padding:9px 13px;font-size:.8rem;font-weight:750;text-decoration:none;cursor:pointer}
+.admin-ops .btn-primary{background:#2563eb;color:white}.admin-ops .btn-subtle{background:rgba(100,116,139,.12);color:inherit}
+.admin-ops .field{border:1px solid rgba(148,163,184,.4);border-radius:9px;padding:9px 11px;background:transparent;color:inherit;min-height:38px}
+.admin-ops .task-name{font-weight:750}.admin-ops .task-path{display:block;font-size:.7rem;color:var(--text-secondary,#64748b);margin-top:3px}
+.admin-ops .empty{padding:22px;text-align:center;color:var(--text-secondary,#64748b)}
+.admin-ops .diag-status{display:inline-flex;padding:4px 8px;border-radius:999px;font-size:.68rem;font-weight:800;white-space:nowrap}
+.admin-ops .diag-status.fixtures_found{background:#dcfce7;color:#166534}
+.admin-ops .diag-status.empty_response{background:#fef3c7;color:#92400e}
+.admin-ops .diag-status.error,.admin-ops .diag-status.not_configured{background:#fee2e2;color:#991b1b}
+.admin-ops .diag-status.never_checked{background:#e2e8f0;color:#475569}
+.admin-ops .diag-error{max-width:360px;white-space:normal;overflow-wrap:anywhere;color:#b91c1c;font-size:.72rem}
+
+@media(max-width:1000px){.admin-ops .ops-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.admin-ops .ops-grid{grid-template-columns:1fr 1fr}.admin-ops .metric{padding:14px}.admin-ops .metric-value{font-size:1.45rem}.admin-ops .panel{padding:14px}}
+</style>
+
+<div class="admin-ops">
+  <div class="ops-header">
+    <div>
+      <div class="eyebrow">IX-Tips · System operations</div>
+      <h1>Admin overview</h1>
+      <div class="muted">Monitor league coverage, prediction output and scheduled processing.</div>
+    </div>
+    <div class="muted">Reporting date · {{ today|date:"D, d M Y" }}</div>
+  </div>
+
+  <div class="ops-grid">
+    <div class="metric"><div class="metric-label">Competitions monitored</div><div class="metric-value">{{ totals.competitions }}</div><div class="muted">Configured leagues</div></div>
+    <div class="metric"><div class="metric-label">Training records cached</div><div class="metric-value">{{ totals.training_entries }}</div><div class="muted">Historical model input</div></div>
+    <div class="metric"><div class="metric-label">Predictions saved</div><div class="metric-value">{{ totals.predictions }}</div><div class="muted">{{ totals.competitions_with_predictions }} leagues with output</div></div>
+    <div class="metric"><div class="metric-label">Upcoming predictions</div><div class="metric-value">{{ totals.upcoming_predictions }}</div><div class="muted">{{ totals.competitions_without_upcoming }} leagues need output review</div></div>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div><h2>Competition coverage</h2><div class="muted">Training cache ≠ fixtures ≠ generated predictions. Check all three stages.</div></div>
+      <span class="muted">{{ competition_rows|length }} competitions</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Competition</th><th>Provider</th><th>Training data</th><th>Saved predictions</th><th>Upcoming predictions</th><th>Latest match</th><th>Coverage stage</th><th>Fixture discovery</th><th>Action</th></tr></thead>
+        <tbody>
+        {% for row in competition_rows %}
+          <tr>
+            <td><span class="comp-name">{{ row.name }}</span><span class="comp-code">{{ row.code }}</span></td>
+            <td>{{ row.provider }}</td>
+            <td>{% if row.training_cached %}<strong>{{ row.training_entries }}</strong> rows{% else %}<span class="muted">Not cached</span>{% endif %}</td>
+            <td>{{ row.prediction_count }}</td>
+            <td><strong>{{ row.upcoming_count }}</strong></td>
+            <td>{{ row.latest_match_date|date:"d M Y"|default:"—" }}</td>
+            <td>
+              {% if row.coverage_status == "ready" %}<span class="pill ready">Generating</span>
+              {% elif row.coverage_status == "trained" %}<span class="pill trained">No upcoming output</span>
+              {% else %}<span class="pill missing">No training cache</span>{% endif %}
+            </td>
+            <td>
+              {% if row.fixture_status == "fixtures_found" %}
+                <span class="muted">{{ row.provider_fixture_count }} from {{ row.provider }}</span>
+              {% elif row.fixture_status == "error" %}
+                <span class="diag-error">{{ row.provider_error|default:"Provider request failed" }}</span>
+              {% else %}
+                <span class="muted">{{ row.fixture_status|default:"Never checked"|title|cut:"_" }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="POST" action="{% url 'refresh_cache_now' %}">
+                {% csrf_token %}<input type="hidden" name="competition" value="{{ row.code }}">
+                <button class="btn btn-subtle" type="submit">Refresh data</button>
+              </form>
+            </td>
+          </tr>
+        {% empty %}<tr><td colspan="9" class="empty">No competitions configured.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+
+  <section class="panel">
+    <div class="panel-head">
+      <div><h2>Provider diagnostics</h2><div class="muted">Latest fixture-provider attempt per league. Diagnostics update automatically when the prediction pipeline checks fixtures; opening this page does not spend API requests.</div></div>
+      <span class="muted">Credentials are never displayed</span>
+    </div>
+    <div class="table-wrap">
+      <table style="min-width:1050px">
+        <thead><tr><th>League</th><th>Provider</th><th>Configuration</th><th>Last result</th><th>Fixtures</th><th>Last checked</th><th>Last success</th><th>Details / error</th></tr></thead>
+        <tbody>
+        {% for row in competition_rows %}
+          {% for diag in row.provider_diagnostics %}
+          <tr>
+            {% if forloop.first %}<td rowspan="{{ row.provider_diagnostics|length }}"><strong>{{ row.name }}</strong><span class="comp-code">{{ row.code }}</span></td>{% endif %}
+            <td><strong>{{ diag.provider }}</strong></td>
+            <td>{% if diag.configured %}<span class="pill enabled">Configured</span>{% else %}<span class="pill missing">Not configured</span><div class="muted">{{ diag.credential_name }}</div>{% endif %}</td>
+            <td><span class="diag-status {{ diag.status }}">{{ diag.status|default:"never_checked"|title|cut:"_" }}</span></td>
+            <td>{{ diag.fixture_count|default:0 }}</td>
+            <td>{{ diag.last_checked|default:"Never" }}</td>
+            <td>{{ diag.last_success|default:"—" }}</td>
+            <td>{% if diag.last_error %}<div class="diag-error">{{ diag.last_error }}</div>{% elif diag.last_match_date %}<span class="muted">Checked {{ diag.last_match_date }}</span>{% elif not diag.configured %}<span class="muted">Set the required environment variable on the server.</span>{% else %}<span class="muted">No attempt recorded yet.</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        {% empty %}<tr><td colspan="8" class="empty">No provider diagnostics available.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="muted" style="margin-top:12px">For LF, the dashboard only reports whether LIVEFOOTBALL_KEY is present; it never reveals the key. An empty response means the request completed but no usable fixtures were returned.</div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <div><h2>Prediction controls</h2><div class="muted">Run the same scheduled jobs used by the background pipeline.</div></div>
+      <a class="btn btn-primary" href="{% url 'live_predictions' %}">View predictions</a>
+    </div>
+    <div class="actions" style="margin-bottom:18px">
+      <form method="POST" action="{% url 'regenerate_top_picks' %}" class="actions">
+        {% csrf_token %}
+        <input class="field" type="date" name="match_date" value="{{ today|date:'Y-m-d' }}" min="{{ today|date:'Y-m-d' }}">
+        <select class="field" name="variant"><option value="1">Sure 1</option><option value="2">Sure 2</option><option value="3">Running Bet</option><option value="4">Mshipi</option></select>
+        <button class="btn btn-primary" type="submit">Regenerate top picks</button>
+      </form>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Scheduled job</th><th>State</th><th>Schedule</th><th>Last run</th><th>Last changed</th><th>Control</th></tr></thead>
+        <tbody>
+        {% for task in tasks %}
+          <tr>
+            <td><span class="task-name">{{ task.name }}</span><span class="task-path">{{ task.task_label }} · {{ task.task }}</span></td>
+            <td>{% if task.enabled %}<span class="pill enabled">Enabled</span>{% else %}<span class="pill disabled">Disabled</span>{% endif %}</td>
+            <td>{% if task.interval %}Every {{ task.interval }}{% elif task.crontab %}{{ task.crontab }}{% else %}Manual{% endif %}</td>
+            <td>{{ task.last_run_at|date:"d M Y H:i"|default:"Never" }}</td>
+            <td>{{ task.last_triggered|date:"d M Y H:i"|default:"—" }}</td>
+            <td><form method="POST" action="{% url 'trigger_task_now' %}">{% csrf_token %}<input type="hidden" name="task_path" value="{{ task.task }}"><button class="btn btn-subtle" type="submit">Run now</button></form></td>
+          </tr>
+        {% empty %}<tr><td colspan="6" class="empty">No periodic tasks are configured.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+
+  <section class="panel" id="fixture-team-discovery">
+    <div class="panel-head">
+      <div><h2>Fixture team discovery</h2><div class="muted">Teams are loaded from saved fixtures, not standings. This includes upcoming fixtures.</div></div>
+      <span class="muted" id="team-discovery-count">Choose a competition</span>
+    </div>
+    <div class="actions">
+      <select class="field" id="team-discovery-competition" aria-label="Competition"><option value="">Loading competitions…</option></select>
+      <input class="field" type="date" id="team-discovery-date" aria-label="Fixture date">
+      <button class="btn btn-primary" type="button" id="team-discovery-load">Load teams</button>
+    </div>
+    <div class="muted" id="team-discovery-status" role="status" style="margin-top:12px">Select a league to inspect its saved fixture teams.</div>
+    <div class="actions" style="margin-top:12px">
+      <label for="team-discovery-home">Home team</label>
+      <select class="field" id="team-discovery-home"><option value="">—</option></select>
+      <label for="team-discovery-away">Away team</label>
+      <select class="field" id="team-discovery-away"><option value="">—</option></select>
+    </div>
+  </section>
+  <script>
+  (() => {
+    const competition = document.getElementById("team-discovery-competition");
+    const dateInput = document.getElementById("team-discovery-date");
+    const loadButton = document.getElementById("team-discovery-load");
+    const status = document.getElementById("team-discovery-status");
+    const count = document.getElementById("team-discovery-count");
+    const home = document.getElementById("team-discovery-home");
+    const away = document.getElementById("team-discovery-away");
+    const api = "/api/v1/competition-teams/";
+    const fill = (select, teams) => {
+      select.replaceChildren(new Option("Select team", ""));
+      teams.forEach(team => select.add(new Option(team.name, team.name)));
+    };
+    fetch("/api/v1/competitions/")
+      .then(response => { if (!response.ok) throw new Error("Could not load competitions"); return response.json(); })
+      .then(data => {
+        competition.replaceChildren(new Option("Select competition", ""));
+        (data.competitions || []).forEach(item => competition.add(new Option(item.name, item.code)));
+      })
+      .catch(() => { competition.replaceChildren(new Option("Competitions unavailable", "")); });
+    async function loadTeams() {
+      if (!competition.value) { status.textContent = "Choose a competition first."; return; }
+      status.textContent = "Loading teams…";
+      loadButton.disabled = true;
+      const params = new URLSearchParams({competition: competition.value});
+      if (dateInput.value) params.set("date", dateInput.value);
+      try {
+        const response = await fetch(api + "?" + params.toString(), {credentials: "same-origin"});
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Team lookup failed");
+        const teams = data.teams || [];
+        fill(home, teams); fill(away, teams);
+        count.textContent = data.fixture_count + " saved fixtures · " + data.team_count + " teams";
+        status.textContent = teams.length ? "Teams found from saved fixtures." : "No saved fixtures found for this competition/date.";
+      } catch (error) {
+        fill(home, []); fill(away, []);
+        status.textContent = error.message || "Could not load teams.";
+      } finally { loadButton.disabled = false; }
+    }
+    loadButton.addEventListener("click", loadTeams);
+    competition.addEventListener("change", loadTeams);
+    dateInput.addEventListener("change", loadTeams);
+  })();
+  </script>
+
+  <section class="panel">
+    <div class="panel-head"><div><h2>Latest prediction records</h2><div class="muted">A quick confirmation of what the application has persisted.</div></div><span class="muted">Most recent 8</span></div>
+    <div class="table-wrap">
+      <table><thead><tr><th>Match date</th><th>Competition</th><th>Fixture</th><th>Model score</th><th>Result</th><th>Status</th></tr></thead>
+      <tbody>{% for match in recent_predictions %}
+        <tr><td>{{ match.match_date|date:"d M Y" }}</td><td>{{ match.competition }}</td><td><strong>{{ match.home_team }}</strong> vs {{ match.away_team }}</td><td>{{ match.predicted_home_goals|default:"—" }} – {{ match.predicted_away_goals|default:"—" }}</td><td>{{ match.predicted_result|default:"—" }}</td><td>{{ match.status }}</td></tr>
+      {% empty %}<tr><td colspan="6" class="empty">No prediction records have been saved yet.</td></tr>{% endfor %}</tbody></table>
+    </div>
+  </section>
+</div>
+{% endblock %}
