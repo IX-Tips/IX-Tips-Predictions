@@ -76,10 +76,13 @@ competitions = COMPETITIONS
 
 
 def resolve_competition_logo(competition_code):
-    """Prefer repository assets, then the verified external catalog, then a flag."""
+    """Prefer local assets and metadata-job cache before the bundled catalog."""
     local_path = os.path.join(settings.BASE_DIR, "static", "logos", f"{competition_code}.png")
     if os.path.exists(local_path):
         return static(f"logos/{competition_code}.png")
+    cached_meta = cache.get(f"competition_meta::{competition_code}", {})
+    if cached_meta.get("crest"):
+        return cached_meta["crest"]
     return get_football_competition_logo_url(competition_code) or country_flag_url(competition_code)
 
 
