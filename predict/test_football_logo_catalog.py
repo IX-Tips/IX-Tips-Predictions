@@ -13,12 +13,12 @@ from predict.constants import (
 class FootballLogoCatalogTests(SimpleTestCase):
     def test_resolves_team_logo_from_competition_country(self):
         url = get_football_team_logo_url("Liverpool FC", "PL")
-        self.assertTrue(url.startswith("https://assets.football-logos.cc/logos/england/256x256/liverpool."))
+        self.assertTrue(url.startswith("https://assets.football-logos.cc/logos/england/512x512/liverpool."))
         self.assertTrue(url.endswith(".png"))
 
     def test_resolves_competition_logo(self):
         url = get_football_competition_logo_url("PL")
-        self.assertTrue(url.startswith("https://assets.football-logos.cc/logos/england/256x256/english-premier-league."))
+        self.assertTrue(url.startswith("https://assets.football-logos.cc/logos/england/512x512/english-premier-league."))
         self.assertTrue(url.endswith(".png"))
 
     def test_every_configured_competition_has_a_catalog_logo(self):
@@ -31,18 +31,18 @@ class FootballLogoCatalogTests(SimpleTestCase):
         with patch("predict.constants.cache.get", return_value={"shortName": "Liverpool", "crest": provider_crest}):
             with patch("predict.constants.cache.set"):
                 metadata = get_team_metadata("Liverpool FC", "PL")
-        self.assertTrue(metadata["crest"].startswith("https://assets.football-logos.cc/logos/england/256x256/liverpool."))
+        self.assertTrue(metadata["crest"].startswith("https://assets.football-logos.cc/logos/england/512x512/liverpool."))
         self.assertEqual(metadata["logo_source"], "football-logos.cc")
 
     def test_resolves_common_provider_aliases(self):
         url = get_football_team_logo_url("Man City", "PL")
-        self.assertTrue(url.startswith("https://assets.football-logos.cc/logos/england/256x256/manchester-city."))
+        self.assertTrue(url.startswith("https://assets.football-logos.cc/logos/england/512x512/manchester-city."))
 
     def test_uses_catalog_team_logo_when_provider_has_no_crest(self):
         with patch("predict.constants.cache.get", return_value={"shortName": "Liverpool FC", "crest": None}):
             with patch("predict.constants.cache.set"):
                 metadata = get_team_metadata("Liverpool FC", "PL")
-        self.assertTrue(metadata["crest"].startswith("https://assets.football-logos.cc/logos/england/256x256/liverpool."))
+        self.assertTrue(metadata["crest"].startswith("https://assets.football-logos.cc/logos/england/512x512/liverpool."))
         self.assertEqual(metadata["logo_source"], "football-logos.cc")
 
     def test_uses_country_flag_when_team_is_not_in_catalog(self):
