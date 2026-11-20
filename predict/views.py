@@ -2882,6 +2882,7 @@ def predictions_view(request):
     # is allowed in a normal page request.
     top_predictions = {}
     stored_picks = TopPick.objects.filter(
+        variant="1",
         match_date__gte=today,
         match_date__lte=prediction_window_end,
     ).order_by("-confidence", "match_date")[:10]
