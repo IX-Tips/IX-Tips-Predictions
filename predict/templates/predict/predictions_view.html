@@ -40,6 +40,19 @@
   height: 22px;
   object-fit: contain;
 }
+.league-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 16px;
+  background: var(--table-header-bg);
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+.league-group-heading img { width: 22px; height: 22px; object-fit: contain; }
+.league-group-heading small { margin-left: auto; color: var(--text-secondary); font-size: 0.7rem; font-weight: 600; }
 .page-header { gap: 18px; margin-bottom: 24px; padding-bottom: 18px; }
 .section-title { font-size: clamp(1.9rem, 3vw, 2.4rem); }
 .section-subtitle { margin-top: 6px; font-size: 0.98rem; color: var(--text-secondary); }
@@ -303,9 +316,14 @@
     <div class="section-subtitle">Daily match outcomes with projected scores and settled results.</div>
   </div>
   <div class="action-row">
-    <form id="filter-form" method="get" class="d-flex gap-2">
+    <form id="filter-form" method="get" class="d-flex gap-2 flex-wrap">
+      <select id="competition-select" name="competition" class="form-select date-input" aria-label="Filter by league">
+        <option value="">All leagues</option>
+        {% for option in competition_options %}
+          <option value="{{ option.code }}" {% if selected_competition == option.code %}selected{% endif %}>{{ option.name }}</option>
+        {% endfor %}
+      </select>
       <input type="text" id="date-picker" name="match_date" placeholder="Select date" class="form-control date-input" readonly value="{{ selected_date }}">
-      <input type="hidden" name="competition" value="{{ selected_competition }}">
     </form>
   </div>
 </div>
@@ -328,7 +346,16 @@
       <div class="grid-col col-12 text-center text-muted">No predictions available for the selected date.</div>
     </div>
   {% else %}
-    {% for match in predictions %}
+    {% regroup predictions by competition_code as league_groups %}
+    {% for league in league_groups %}
+    <div class="league-group-heading">
+      {% if league.list.0.competition_logo %}
+        <img src="{{ league.list.0.competition_logo }}" alt="" loading="lazy">
+      {% endif %}
+      <span>{{ league.list.0.competition_name }}</span>
+      <small>{{ league.list|length }} match{{ league.list|length|pluralize }}</small>
+    </div>
+    {% for match in league.list %}
     <div class="grid-row">
       <div class="grid-col date-time">
         <div class="time">{{ match.match_time }}</div>
@@ -403,6 +430,7 @@
       </div>
     </div>
     {% endfor %}
+    {% endfor %}
   {% endif %}
 </div>
 </div>
@@ -412,7 +440,7 @@
     {% if page_obj.has_previous %}
       <li class="page-item">
         <a class="page-link"
-           href="?page={{ page_obj.previous_page_number }}{% if selected_date %}&match_date={{ selected_date }}{% endif %}">
+           href="?page={{ page_obj.previous_page_number }}{% if selected_date %}&match_date={{ selected_date }}{% endif %}{% if selected_competition %}&competition={{ selected_competition }}{% endif %}">
           Previous
         </a>
       </li>
@@ -423,7 +451,7 @@
     {% if page_obj.has_next %}
       <li class="page-item">
         <a class="page-link"
-           href="?page={{ page_obj.next_page_number }}{% if selected_date %}&match_date={{ selected_date }}{% endif %}">
+           href="?page={{ page_obj.next_page_number }}{% if selected_date %}&match_date={{ selected_date }}{% endif %}{% if selected_competition %}&competition={{ selected_competition }}{% endif %}">
           Next
         </a>
       </li>
@@ -446,6 +474,9 @@ document.addEventListener('DOMContentLoaded', function() {
     altFormat: "F j, Y",
     dateFormat: "Y-m-d",
     defaultDate: "{{ selected_date|default:'' }}",
+    minDate: "{{ today_date }}",
+    maxDate: "{{ prediction_window_end }}",
+    disableMobile: true,
     onChange: function() {
       form.submit();
     }
@@ -453,17 +484,9 @@ document.addEventListener('DOMContentLoaded', function() {
   const compSelect = document.getElementById("competition-select");
   if (compSelect) {
     compSelect.addEventListener("change", function() {
-      const comp = this.value;
-      fetch(`/ajax/league-table/?competition=${comp}`)
-        .then(res => res.json())
-        .then(data => {
-          document.getElementById("league-table-container").innerHTML = data.html;
-        });
+      form.submit();
     });
   }
-  window.setTimeout(function() {
-    window.location.reload();
-  }, 300000);
 });
 </script>
 {% endblock %}
