@@ -93,4 +93,4 @@ class PredictionSnapshotTests(TestCase):
         self.assertEqual(original.actual_home_goals, 2)
         self.assertEqual(original.actual_away_goals, 1)
         self.assertTrue(original.is_accurate)
-        inference.assert_called_once()
+        inference.assert_not_called()
