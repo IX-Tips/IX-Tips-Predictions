@@ -336,7 +336,7 @@ def training_data_cache_key(comp_code):
 def model_cache_key(comp_code):
     # Version the serialized bundle whenever the feature schema or prediction
     # calibration changes; otherwise workers can keep serving stale models.
-    return f"model_bundle_v2::{comp_code}"
+    return f"model_bundle_v3::{comp_code}"
 
 
 # Country catalog used to resolve missing team crests without making a
