@@ -263,6 +263,13 @@ LIVEFOOTBALL_LEAGUE_IDS = {
     "SAU": 536,
 }
 
+# Curated competition-strength ordering used to group public predictions.
+# Remaining competitions follow alphabetically after these primary competitions.
+COMPETITION_DISPLAY_ORDER = (
+    "PL", "CL", "PD", "SA", "BL1", "FL1", "ELC", "DED", "PPL",
+    "BEL", "TUR", "SCO", "BSA", "CLI", "SAU",
+)
+
 COMPETITION_CHOICES = [(code, name) for code, name in COMPETITIONS.items()]
 competitions = COMPETITIONS
 NAME_TO_CODE = {name.lower(): code for code, name in COMPETITIONS.items()}
@@ -528,17 +535,23 @@ def get_football_competition_logo_url(competition_code):
 
 
 def get_team_metadata(name, competition_code=None):
-    meta = cache.get(team_meta_cache_key(name), {"shortName": name, "crest": None})
+    key = team_meta_cache_key(name)
+    meta = cache.get(key, {"shortName": name, "crest": "", "competition": competition_code})
     if meta.get("crest"):
         return meta
 
     fallback_competition = competition_code or meta.get("competition")
     team_logo = get_football_team_logo_url(name, fallback_competition)
     if team_logo:
-        return {**meta, "crest": team_logo, "logo_source": "football-logos.cc"}
+        meta = {**meta, "crest": team_logo, "logo_source": "football-logos.cc"}
+    else:
+        # If no verified club logo matches, use the competition country flag.
+        flag = country_flag_url(fallback_competition) if fallback_competition else None
+        if flag:
+            meta = {**meta, "crest": flag, "logo_source": "competition-country-flag"}
 
-    # If no verified club logo matches, use the competition country flag.
-    flag = country_flag_url(fallback_competition) if fallback_competition else None
-    if flag:
-        return {**meta, "crest": flag}
+    # Cache the resolved fallback as well, so a missing provider crest does not
+    # trigger the local catalog lookup on every page render.
+    if meta.get("crest"):
+        cache.set(key, meta, timeout=TEAM_METADATA_CACHE_TIMEOUT)
     return meta
