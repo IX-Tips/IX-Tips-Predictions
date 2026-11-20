@@ -82,7 +82,10 @@ class ApiFootballOddsFallbackTests(SimpleTestCase):
                 {
                     "fixture": {"id": 2},
                     "teams": {"home": {"name": "Liverpool"}, "away": {"name": "Everton"}},
-                    "bookmakers": [{"name": "Fallback", "bets": []}],
+                    "bookmakers": [{"name": "Fallback", "bets": [{
+                        "name": "Match Winner",
+                        "values": [{"value": "Home", "odd": "1.65"}, {"value": "Draw", "odd": "3.8"}, {"value": "Away", "odd": "5.0"}],
+                    }]}],
                 },
             ],
         }
