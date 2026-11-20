@@ -1,9 +1,12 @@
+from unittest.mock import patch
+
 from django.test import SimpleTestCase
 import pandas as pd
 
 from .utils import (
     _estimate_goal_rate_bias,
     build_training_features,
+    compute_cross_league_elo,
     summarize_competition_feature_coverage,
 )
 
@@ -89,6 +92,32 @@ class PredictionFeatureCoverageTests(SimpleTestCase):
                     _normalize_team_lookup_value(provider_name),
                     _normalize_team_lookup_value(canonical_name),
                 )
+
+    @patch("predict.utils.fetch_training_data_all_seasons")
+    def test_cross_competition_elo_aggregates_provider_name_variants(self, fetch_history):
+        fetch_history.return_value = pd.DataFrame([
+            {
+                "home_team": "Man Utd",
+                "away_team": "Everton FC",
+                "home_goals": 2,
+                "away_goals": 0,
+                "utc_date": "2025-01-01T15:00:00Z",
+            },
+            {
+                "home_team": "Manchester United FC",
+                "away_team": "Liverpool FC",
+                "home_goals": 1,
+                "away_goals": 1,
+                "utc_date": "2025-01-08T15:00:00Z",
+            },
+        ])
+
+        with patch("predict.constants.COMPETITIONS", {"PL": "Premier League"}):
+            ratings, _ = compute_cross_league_elo()
+
+        self.assertIn("manchester united", ratings)
+        self.assertNotIn("man utd", ratings)
+        self.assertNotIn("manchester united fc", ratings)
 
     def test_competition_coverage_reports_partial_history_without_inference(self):
         history = pd.DataFrame([

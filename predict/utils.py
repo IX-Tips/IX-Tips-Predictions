@@ -20,6 +20,7 @@ from sklearn.preprocessing import LabelEncoder
 
 from .constants import (
     API_TOKEN,
+    APIFOOTBALL_API_KEY,
     FOOTBALL_TEAM_LOGO_ALIASES,
     BASE_URL,
     COMPETITIONS,
@@ -1317,7 +1318,7 @@ def _build_profiles_from_history(history):
     return dict(team_profiles), dict(h2h_profiles)
 
 
-GLOBAL_ELO_CACHE_KEY = "global_elo_ratings_v1"
+GLOBAL_ELO_CACHE_KEY = "global_elo_ratings_v2"
 
 
 def _get_global_elo():
@@ -1377,7 +1378,8 @@ def compute_cross_league_elo():
     league_elos = defaultdict(list)
 
     for m in all_matches:
-        home, away = m["home_team"], m["away_team"]
+        home = _normalize_team_lookup_value(m["home_team"]) or m["home_team"]
+        away = _normalize_team_lookup_value(m["away_team"]) or m["away_team"]
         hg, ag = m["home_goals"], m["away_goals"]
         comp = m["competition"]
         _update_elo_ratings(elo, home, away, hg, ag, k_factor=24.0)
@@ -2377,28 +2379,129 @@ def save_predictions(matches, model_home=None, model_away=None, le=None, match_d
 
 # ---------- odds helpers (optional) ----------
 
-def fetch_odds_for_date(odds_api_key, sport_key="soccer_epl", regions="uk,eu", markets="h2h,total", odds_format="decimal"):
-    """
-    Uses The Odds API (https://the-odds-api.com) format by default. This is optional.
-    Returns list of odds data or empty list if not enabled.
-    """
-    if not odds_api_key:
+def _normalize_apifootball_odds(payload):
+    """Convert API-Football's fixture/bet schema to The Odds API's event schema."""
+    if not isinstance(payload, dict) or payload.get("errors"):
         return []
 
-    # Example: the-odds-api endpoint (v4) -- adjust if using RapidAPI
-    if ODDS_PROVIDER == "the-odds-api":
+    normalized = []
+    for fixture in payload.get("response") or []:
+        teams = fixture.get("teams") or {}
+        home = (teams.get("home") or {}).get("name")
+        away = (teams.get("away") or {}).get("name")
+        if not home or not away:
+            continue
+
+        bookmaker_rows = []
+        for bookmaker in fixture.get("bookmakers") or []:
+            markets = []
+            for bet in bookmaker.get("bets") or []:
+                bet_name = str(bet.get("name") or "").strip().lower()
+                values = bet.get("values") or []
+                outcomes = [
+                    {"name": str(value.get("value") or "").strip(), "price": value.get("odd")}
+                    for value in values
+                    if value.get("value") is not None and value.get("odd") is not None
+                ]
+                if not outcomes:
+                    continue
+                if bet_name in {"match winner", "1x2", "fulltime result", "match result"}:
+                    for outcome in outcomes:
+                        label = outcome["name"].strip().lower()
+                        if label in {"home", "1"}:
+                            outcome["name"] = home
+                        elif label in {"away", "2"}:
+                            outcome["name"] = away
+                        elif label in {"draw", "x"}:
+                            outcome["name"] = "Draw"
+                    markets.append({"key": "h2h", "outcomes": outcomes})
+                elif bet_name in {"goals over/under", "over/under", "total goals"}:
+                    markets.append({"key": "over_under", "outcomes": outcomes})
+                elif bet_name in {"both teams score", "both teams to score", "btts"}:
+                    markets.append({"key": "btts", "outcomes": outcomes})
+            if markets:
+                bookmaker_rows.append({
+                    "title": bookmaker.get("name") or "API-Football",
+                    "markets": markets,
+                })
+
+        if bookmaker_rows:
+            normalized.append({
+                "id": str((fixture.get("fixture") or {}).get("id") or ""),
+                "home_team": home,
+                "away_team": away,
+                "bookmakers": bookmaker_rows,
+            })
+    return normalized
+
+
+def fetch_odds_for_date(
+    odds_api_key=None,
+    sport_key="soccer_epl",
+    regions="uk,eu",
+    markets="h2h,total",
+    odds_format="decimal",
+    match_date=None,
+):
+    """
+    Fetch odds from The Odds API first, then API-Football when the primary
+    feed is empty/unavailable. The fallback is date-scoped and cached because
+    API-Football refreshes pre-match odds only every few hours.
+    """
+    primary_data = []
+    primary_key = odds_api_key or ODDS_API_KEY
+    if primary_key and ODDS_PROVIDER == "the-odds-api":
         url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds"
         params = {
-            "apiKey": odds_api_key,
+            "apiKey": primary_key,
             "regions": regions,
             "markets": markets,
-            "oddsFormat": odds_format
+            "oddsFormat": odds_format,
         }
         data = _get_json(url, headers=None, params=params, retries=2)
-        return data or []
+        if isinstance(data, list):
+            primary_data = data
 
-    # Add RapidAPI or other providers here
-    return []
+    if not APIFOOTBALL_API_KEY:
+        return primary_data
+
+    target_date = str(match_date or timezone.localdate().isoformat())
+    cache_key = f"odds_fallback_apifootball_{target_date}"
+    cached = cache.get(cache_key)
+    if cached is None:
+        fallback_url = "https://v3.football.api-sports.io/odds"
+        payload = _get_json(
+            fallback_url,
+            headers={"x-apisports-key": APIFOOTBALL_API_KEY},
+            params={"date": target_date},
+            retries=1,
+        )
+        normalized = _normalize_apifootball_odds(payload)
+        # Cache only valid provider responses. Do not turn outages or
+        # authentication failures into a three-hour negative cache.
+        if isinstance(payload, dict) and not payload.get("errors"):
+            cache.set(cache_key, normalized, timeout=60 * 60 * 3)
+        cached = normalized
+
+    # Keep primary prices first, but supplement fixtures missing from the
+    # primary feed. Canonical team identities prevent duplicate provider rows.
+    seen = {
+        (
+            _normalize_team_lookup_value(item.get("home_team") or item.get("home")) or "",
+            _normalize_team_lookup_value(item.get("away_team") or item.get("away")) or "",
+        )
+        for item in primary_data
+    }
+    for item in cached or []:
+        key = (
+            _normalize_team_lookup_value(item.get("home_team")) or "",
+            _normalize_team_lookup_value(item.get("away_team")) or "",
+        )
+        if key[0] and key[1] and key not in seen:
+            primary_data.append(item)
+            seen.add(key)
+
+    return primary_data
 
 
 def attach_odds_to_predictions(match_predictions, odds_list):
@@ -2414,7 +2517,7 @@ def attach_odds_to_predictions(match_predictions, odds_list):
     updated = 0
     # basic name normalization helper
     def normalize(name):
-        return name.lower().replace(".", "").replace("fc", "").strip()
+        return _normalize_team_lookup_value(name) or str(name or "").lower().replace(".", "").replace("fc", "").strip()
 
     # Build mapping from normalized names to MatchPrediction(s)
     mp_map = {}
@@ -2464,11 +2567,11 @@ def attach_odds_to_predictions(match_predictions, odds_list):
                     for o in outcomes:
                         n = o.get("name", "").lower()
                         p = o.get("price")
-                        if normalize(n) == normalize(home) and odds_obj:
+                        if normalize(n) == normalize(mp.home_team) and odds_obj:
                             odds_obj.home_win = p
                         elif n == "draw" and odds_obj:
                             odds_obj.draw = p
-                        elif normalize(n) == normalize(away) and odds_obj:
+                        elif normalize(n) == normalize(mp.away_team) and odds_obj:
                             odds_obj.away_win = p
                 elif key_m in ("over_under", "total_goals"):
                     for o in outcomes:
