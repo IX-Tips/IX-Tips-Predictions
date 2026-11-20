@@ -8,6 +8,7 @@
   <title>Team Logos Preview</title>
 
   <style>
+     .logo-meta { min-width: 0; overflow-wrap: anywhere; font-size: .85rem; }
     .team-box {
       border: 1px solid #ddd;
       border-radius: 6px;
@@ -54,7 +55,13 @@
         <div class="col-md-4">
           <div class="team-box">
             <img src="{{ team.crest }}" class="team-logo" alt="{{ team.short }}">
-            <span>{{ team.short }}</span>
+            <div class="logo-meta">
+            <strong>{{ team.short }}</strong>
+            <small class="d-block text-muted">{{ team.name }}</small>
+            <small class="d-block">Source: {{ team.logo_source }}</small>
+            <small class="d-block text-muted text-break">Resolved: {{ team.crest }}</small>
+            {% if team.provider_crest %}<small class="d-block text-muted text-break">Provider: {{ team.provider_crest }}</small>{% endif %}
+          </div>
           </div>
         </div>
       {% endfor %}

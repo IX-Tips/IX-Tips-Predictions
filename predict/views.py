@@ -3327,22 +3327,37 @@ def ajax_league_table(request):
 
 
 def team_logos_preview(request):
-    grouped_teams = defaultdict(list)
-
-    # NOTE: cache.iter_keys may not exist depending on your cache backend
-    # this portion retains earlier logic but might need adaptation for your cache
-    for comp_code in COMPETITIONS:
-        # scan keys in cache is backend-dependent; keep simple: attempt to load from known teams
-        pass
-
-    # Fallback simple preview (if cache keys scanning not available)
+    """Show known teams per competition and the actual logo metadata resolved."""
     preview_data = []
     for comp_code, comp_name in competitions.items():
+        teams_by_key = {}
+        try:
+            standings = get_league_table(comp_code) or []
+        except Exception:
+            logger.exception("TEAM_LOGO_PREVIEW_STANDINGS_FAILED competition=%s", comp_code)
+            standings = []
+
+        for row in standings:
+            team_obj = row.get("team") or {}
+            name = team_obj.get("name") or team_obj.get("shortName")
+            if not name:
+                continue
+            normalized = _normalize_team_lookup_value(name)
+            meta = get_team_metadata(name, comp_code) or {}
+            crest = meta.get("crest") or get_football_team_logo_url(name, comp_code) or static("logos/default.png")
+            teams_by_key[normalized] = {
+                "name": name,
+                "short": meta.get("shortName") or team_obj.get("shortName") or name,
+                "crest": crest,
+                "logo_source": meta.get("logo_source") or ("provider" if team_obj.get("crest") else "catalogue/fallback"),
+                "provider_crest": team_obj.get("crest") or "",
+            }
+
         preview_data.append({
             "competition": comp_name,
             "competition_code": comp_code,
             "logo": resolve_competition_logo(comp_code),
-            "teams": []
+            "teams": sorted(teams_by_key.values(), key=lambda team: team["name"].casefold()),
         })
 
     return render(request, "predict/team_logos_preview.html", {
