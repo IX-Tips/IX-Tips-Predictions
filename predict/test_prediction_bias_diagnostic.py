@@ -31,7 +31,8 @@ class PredictionBiasDiagnosticTests(TestCase):
         self.assertEqual(report["draws"]["predicted"], 1)
         self.assertEqual(report["draws"]["actual"], 0)
         self.assertEqual(report["draws"]["precision"], 0.0)
-        self.assertEqual(report["draws"]["recall"], 0.0)
+        # Recall is undefined when there are no actual draws in the sample.
+        self.assertIsNone(report["draws"]["recall"])
         self.assertEqual(report["by_competition"]["PL"]["matches"], 2)
 
     def test_empty_dataset_returns_null_rates(self):
