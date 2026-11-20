@@ -104,7 +104,7 @@ class PredictionsWindowAndLeagueFilterTests(TestCase):
         )
         MatchPrediction.objects.create(
             match_id="provider-two-456",
-            home_team="Man City",
+            home_team="Manchester City FC",
             away_team="Fulham",
             match_date=day,
             competition="PL",
