@@ -49,25 +49,19 @@ def scoreline_predictions(predicted_home_goals, predicted_away_goals, max_goals=
         return float(np.exp(-lam) * (lam ** goals) / math.factorial(goals))
 
     def score_adjustment(home_goals, away_goals):
-        """
-        Light adjustment for known football tendencies:
-        - Draws (especially 0-0 and 1-1) are slightly more common than pure
-          Poisson suggests due to tactical/psychological factors.
-        - Very high scorelines are slightly less likely in practice.
-        Keep adjustments subtle so the model stays realistic.
-        """
-        total_expected = home_rate + away_rate
-        closeness = max(0.0, 1.0 - min(abs(home_rate - away_rate), 2.0) / 2.0)
-
+        # Dixon-Coles low-score correction: football goals are not fully
+        # independent at 0/1 goals. A conservative rho avoids overfitting a
+        # fixed league-specific parameter while correcting the most common
+        # low-score cells. The joint grid is normalized below.
+        rho = -0.08
         if home_goals == 0 and away_goals == 0:
-            # Slight 0-0 boost only when expected goals are low and teams are close
-            low_goal_factor = max(0.0, 1.0 - total_expected / 3.0)
-            return 1.0 + (0.06 * closeness * low_goal_factor)
-        if home_goals == away_goals:
-            # Very slight draw boost
-            return 1.0 + (0.04 * closeness)
-        # Let the fitted goal rates determine high-scoring outcomes. The
-        # independent Poisson probabilities already penalize extreme totals.
+            return max(0.05, 1.0 - (home_rate * away_rate * rho))
+        if home_goals == 0 and away_goals == 1:
+            return max(0.05, 1.0 + (home_rate * rho))
+        if home_goals == 1 and away_goals == 0:
+            return max(0.05, 1.0 + (away_rate * rho))
+        if home_goals == 1 and away_goals == 1:
+            return max(0.05, 1.0 - rho)
         return 1.0
 
     candidates = []
@@ -1278,12 +1272,13 @@ def _get_global_elo():
     if cached is not None:
         return cached
     try:
-        elo, _, last_match = compute_cross_league_elo()
+        elo, league_averages = compute_cross_league_elo()
         if elo:
             cache.set(GLOBAL_ELO_CACHE_KEY, elo, timeout=60 * 60 * 25)
-            if last_match:
-                cache.set(GLOBAL_LAST_MATCH_KEY, last_match, timeout=60 * 60 * 25)
-            logger.info("Global ELO computed: %d teams across leagues", len(elo))
+            logger.info(
+                "Global ELO computed: %d teams across %d leagues",
+                len(elo), len(league_averages),
+            )
         return elo
     except Exception as e:
         logger.warning("Failed to compute global ELO: %s", e)
@@ -1426,30 +1421,31 @@ def build_training_features(df, lookback=8):
         "home_goals": league_home_goals,
         "away_goals": league_away_goals,
     }
-    # Cross-league ELO: use pre-computed global ratings as the starting point
-    # so promoted teams carry their Championship ELO (converted), not 1500.
-    _global_elo = {}
-    try:
-        _global_elo = _get_global_elo()
-    except Exception as e:
-        logger.warning("Global ELO unavailable, using per-league defaults: %s", e)
+    # Build Elo strictly in chronological order from matches available before
+    # each training row. Seeding this with a full-history/global Elo snapshot
+    # leaks future results into historical features and inflates validation.
     team_profiles = defaultdict(_new_team_profile)
     h2h_profiles = defaultdict(list)
     elo_ratings = defaultdict(lambda: 1500.0)
-    if _global_elo:
-        for team, rating in _global_elo.items():
-            elo_ratings[team] = rating
     feature_rows = []
+    prior_home_goals = []
+    prior_away_goals = []
 
     for _, row in history.iterrows():
         home = row["home_team"]
         away = row["away_team"]
         match_date = row.get("utc_date")
+        # League goal baselines must also be time-aware. Using full-season
+        # averages here leaked future scoring levels into earlier training rows.
+        row_defaults = {
+            "home_goals": float(np.mean(prior_home_goals)) if prior_home_goals else 1.4,
+            "away_goals": float(np.mean(prior_away_goals)) if prior_away_goals else 1.1,
+        }
         odds_row = {"avgH": row.get("avgH"), "avgD": row.get("avgD"),
                      "avgA": row.get("avgA"), "over25": row.get("over25")}
         feature_rows.append(
             _build_feature_row(
-                home, away, team_profiles, h2h_profiles, league_defaults,
+                home, away, team_profiles, h2h_profiles, row_defaults,
                 lookback, match_date, elo_ratings,
                 odds_row=odds_row,
             )
@@ -1468,6 +1464,8 @@ def build_training_features(df, lookback=8):
             "home_goals": home_goals,
             "away_goals": away_goals,
         })
+        prior_home_goals.append(home_goals)
+        prior_away_goals.append(away_goals)
 
     X = pd.DataFrame(feature_rows, columns=expected_columns).fillna(0)
     y_home = history["home_goals"].astype(float)
@@ -1555,34 +1553,54 @@ def train_models(X, y_home, y_away, sample_weight=None):
     sample_weight = None if sample_weight is None else np.asarray(sample_weight, dtype=float)
     n = len(X_numeric)
 
-    # ── Walk-forward validation ───────────────────────────────────────────
+    # ── Expanding-window validation ───────────────────────────────────────
+    # Keep each validation block strictly after its training block. The prior
+    # fold arithmetic produced zero folds for 100–199 rows and swallowed all
+    # failures, making the reported quality opaque.
     try:
         import xgboost as _xgb
         from sklearn.metrics import mean_absolute_error as _mae
-        n = len(X_numeric)
-        if n >= 100:
-            folds = min(4, n // 200)
-            fsize = n // (folds + 1)
+        if n >= 120:
+            fold_count = min(4, max(1, n // 250))
+            initial_train = max(80, int(n * 0.60))
+            remaining = n - initial_train
+            block_size = max(1, remaining // fold_count)
             wf_metrics = []
-            for f in range(1, folds + 1):
-                te = f * fsize
-                vs = te; ve = min(n, vs + fsize // 2)
-                if ve <= vs: continue
-                mh = _xgb.XGBRegressor(n_estimators=200, objective="count:poisson",
-                      max_depth=5, learning_rate=0.05, random_state=42, n_jobs=-1)
-                ma = _xgb.XGBRegressor(n_estimators=200, objective="count:poisson",
-                      max_depth=5, learning_rate=0.05, random_state=42, n_jobs=-1)
-                mh.fit(X_numeric.iloc[:te], y_home.iloc[:te])
-                ma.fit(X_numeric.iloc[:te], y_away.iloc[:te])
-                mae_h = _mae(y_home.iloc[vs:ve], mh.predict(X_numeric.iloc[vs:ve]))
-                mae_a = _mae(y_away.iloc[vs:ve], ma.predict(X_numeric.iloc[vs:ve]))
-                wf_metrics.append((te, vs, ve, mae_h, mae_a))
+            for fold in range(fold_count):
+                train_end = initial_train + fold * block_size
+                valid_start = train_end
+                valid_end = n if fold == fold_count - 1 else min(n, valid_start + block_size)
+                if valid_end <= valid_start:
+                    continue
+                mh = _xgb.XGBRegressor(
+                    n_estimators=220, objective="count:poisson", max_depth=4,
+                    learning_rate=0.035, min_child_weight=3, subsample=0.85,
+                    colsample_bytree=0.85, reg_lambda=2.0, random_state=42, n_jobs=-1,
+                )
+                ma = _xgb.XGBRegressor(
+                    n_estimators=220, objective="count:poisson", max_depth=4,
+                    learning_rate=0.035, min_child_weight=3, subsample=0.85,
+                    colsample_bytree=0.85, reg_lambda=2.0, random_state=42, n_jobs=-1,
+                )
+                mh.fit(X_numeric.iloc[:train_end], y_home.iloc[:train_end])
+                ma.fit(X_numeric.iloc[:train_end], y_away.iloc[:train_end])
+                mae_h = _mae(y_home.iloc[valid_start:valid_end], mh.predict(X_numeric.iloc[valid_start:valid_end]))
+                mae_a = _mae(y_away.iloc[valid_start:valid_end], ma.predict(X_numeric.iloc[valid_start:valid_end]))
+                baseline_h = _mae(y_home.iloc[valid_start:valid_end], np.repeat(y_home.iloc[:train_end].mean(), valid_end-valid_start))
+                baseline_a = _mae(y_away.iloc[valid_start:valid_end], np.repeat(y_away.iloc[:train_end].mean(), valid_end-valid_start))
+                wf_metrics.append((mae_h, mae_a, baseline_h, baseline_a))
             if wf_metrics:
-                avg_h = sum(m[3] for m in wf_metrics) / len(wf_metrics)
-                avg_a = sum(m[4] for m in wf_metrics) / len(wf_metrics)
-                logger.info(f" Walk-forward ({len(wf_metrics)} folds): MAE home={avg_h:.3f} away={avg_a:.3f}")
-    except Exception:
-        pass
+                avg_h = float(np.mean([m[0] for m in wf_metrics]))
+                avg_a = float(np.mean([m[1] for m in wf_metrics]))
+                base_h = float(np.mean([m[2] for m in wf_metrics]))
+                base_a = float(np.mean([m[3] for m in wf_metrics]))
+                logger.info(
+                    "WALK_FORWARD folds=%d model_mae_home=%.3f model_mae_away=%.3f "
+                    "baseline_mae_home=%.3f baseline_mae_away=%.3f",
+                    len(wf_metrics), avg_h, avg_a, base_h, base_a,
+                )
+    except Exception as exc:
+        logger.warning("Walk-forward validation skipped: %s", exc)
 
     # Full training on 80/20 split (for calibration + final model)
     split_index = max(1, int(n * 0.8))
@@ -1602,12 +1620,14 @@ def train_models(X, y_home, y_away, sample_weight=None):
     try:
         import xgboost as xgb
         model_home = xgb.XGBRegressor(
-            n_estimators=300,
+            n_estimators=420,
             objective="count:poisson",
-            max_depth=6,
-            learning_rate=0.05,
-            subsample=1.0,
-            colsample_bytree=1.0,
+            max_depth=4,
+            learning_rate=0.035,
+            min_child_weight=3,
+            subsample=0.85,
+            colsample_bytree=0.85,
+            reg_lambda=2.0,
             random_state=42,
             n_jobs=-1,
         )
@@ -1626,10 +1646,12 @@ def train_models(X, y_home, y_away, sample_weight=None):
         kind = "XGBoost(count:poisson)"
     except ImportError:
         model_home = RandomForestRegressor(
-            n_estimators=300, random_state=42, min_samples_leaf=2, n_jobs=-1,
+            n_estimators=420, random_state=42, min_samples_leaf=4,
+            max_features=0.85, n_jobs=-1,
         )
         model_away = RandomForestRegressor(
-            n_estimators=300, random_state=42, min_samples_leaf=2, n_jobs=-1,
+            n_estimators=420, random_state=42, min_samples_leaf=4,
+            max_features=0.85, n_jobs=-1,
         )
         model_home.fit(X_tr, yh_tr, sample_weight=sw_tr)
         model_away.fit(X_tr, ya_tr, sample_weight=sw_tr)
@@ -1824,6 +1846,17 @@ def _poisson_best_scoreline(home_rate, away_rate, seed=None):
         for a in range(0, max_goals + 1):
             p = float(exp(-home_rate) * (home_rate ** h) / _fac(h)) * \
                 float(exp(-away_rate) * (away_rate ** a) / _fac(a))
+            # Apply the same conservative Dixon-Coles correction used by the
+            # correct-score probability endpoint.
+            rho = -0.08
+            if h == 0 and a == 0:
+                p *= max(0.05, 1.0 - home_rate * away_rate * rho)
+            elif h == 0 and a == 1:
+                p *= max(0.05, 1.0 + home_rate * rho)
+            elif h == 1 and a == 0:
+                p *= max(0.05, 1.0 + away_rate * rho)
+            elif h == 1 and a == 1:
+                p *= max(0.05, 1.0 - rho)
             scores.append((h, a))
             weights.append(p)
             total += p
@@ -2019,7 +2052,7 @@ def save_predictions(matches, model_home=None, model_away=None, le=None, match_d
 
                     predicted_home_goals, predicted_away_goals = _poisson_best_scoreline(
                         predicted_home_rate, predicted_away_rate,
-                        seed=hash((home, away)) & 0xFFFFFFFF)
+                        seed="mode")
                 else:
                     _, predicted_home_goals, predicted_away_goals, predicted_home_rate, predicted_away_rate, _calib = \
                         predict_match_outcome(home, away, (model_home, model_away, None))

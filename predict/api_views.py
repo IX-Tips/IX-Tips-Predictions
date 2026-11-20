@@ -3,13 +3,14 @@ IX-Tips REST API — v1
 All endpoints consumed by the Flutter mobile app.
 """
 from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.authentication import SessionAuthentication
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from .constants import COMPETITIONS, country_flag_url
+from .constants import COMPETITIONS, country_flag_url, get_football_team_logo_url
 from .models import MatchPrediction, TopPick, ComboSlip
 from .views import (
     build_correct_score_rows,
@@ -27,6 +28,18 @@ from .utils import (
 )
 
 competitions = COMPETITIONS
+
+
+def _team_logo(team_name, competition_code, metadata=None):
+    """Prefer a catalogue badge, then provider crest, then the competition flag."""
+    metadata = metadata or {}
+    catalogue_logo = get_football_team_logo_url(team_name, competition_code)
+    if not catalogue_logo and metadata.get("shortName"):
+        catalogue_logo = get_football_team_logo_url(
+            metadata["shortName"], competition_code
+        )
+    return catalogue_logo or metadata.get("crest") or country_flag_url(competition_code)
+
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -78,8 +91,8 @@ def _prediction_to_dict(p, team_meta_cache=None, form_cache=None, kickoff_cache=
         ),
         "home_team": normalize_display_team_name(meta_home.get("shortName"), fallback=p.home_team),
         "away_team": normalize_display_team_name(meta_away.get("shortName"), fallback=p.away_team),
-        "home_logo": meta_home.get("crest") or country_flag_url(p.competition),
-        "away_logo": meta_away.get("crest") or country_flag_url(p.competition),
+        "home_logo": _team_logo(p.home_team, p.competition, meta_home),
+        "away_logo": _team_logo(p.away_team, p.competition, meta_away),
         "home_form": (form_cache or {}).get((p.home_team, p.competition), []),
         "away_form": (form_cache or {}).get((p.away_team, p.competition), []),
         "predicted_home_goals": p.predicted_home_goals,
@@ -123,6 +136,7 @@ def api_competitions(request):
 
 
 @api_view(["GET"])
+@authentication_classes([SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def api_competition_teams(request):
     """
@@ -258,8 +272,8 @@ def api_top_picks_v1(request):
             "match_date": str(p.match_date),
             "home_team": normalize_display_team_name(meta_home.get("shortName"), fallback=p.home_team),
             "away_team": normalize_display_team_name(meta_away.get("shortName"), fallback=p.away_team),
-            "home_logo": meta_home.get("crest") or country_flag_url(p.competition),
-            "away_logo": meta_away.get("crest") or country_flag_url(p.competition),
+            "home_logo": _team_logo(p.home_team, p.competition, meta_home),
+            "away_logo": _team_logo(p.away_team, p.competition, meta_away),
             "tip": p.tip,
             "confidence": p.confidence,
             "odds": p.odds,
@@ -394,8 +408,8 @@ def api_combo_slips(request):
                 ),
                 "home_team": normalize_display_team_name(meta_home.get("shortName"), fallback=leg.home_team),
                 "away_team": normalize_display_team_name(meta_away.get("shortName"), fallback=leg.away_team),
-                "home_logo": meta_home.get("crest") or country_flag_url(leg.competition),
-                "away_logo": meta_away.get("crest") or country_flag_url(leg.competition),
+                "home_logo": _team_logo(leg.home_team, leg.competition, meta_home),
+                "away_logo": _team_logo(leg.away_team, leg.competition, meta_away),
                 "tip": leg.tip,
                 "confidence": leg.confidence,
                 "odds": leg.odds,
@@ -438,8 +452,8 @@ def api_won_slips(request):
             "match_date": str(p.match_date),
             "home_team": normalize_display_team_name(meta_home.get("shortName"), fallback=p.home_team),
             "away_team": normalize_display_team_name(meta_away.get("shortName"), fallback=p.away_team),
-            "home_logo": meta_home.get("crest") or country_flag_url(p.competition),
-            "away_logo": meta_away.get("crest") or country_flag_url(p.competition),
+            "home_logo": _team_logo(p.home_team, p.competition, meta_home),
+            "away_logo": _team_logo(p.away_team, p.competition, meta_away),
             "tip": p.tip,
             "actual_tip": p.actual_tip,
             "confidence": p.confidence,
