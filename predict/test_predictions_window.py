@@ -81,6 +81,44 @@ class PredictionsWindowAndLeagueFilterTests(TestCase):
         self.assertEqual(context["selected_competition"], "")
         self.assertGreaterEqual(len(context["competition_options"]), 3)
 
+
+    def test_past_dates_remain_selectable(self):
+        past_day = self.today - timedelta(days=30)
+        self.add_prediction("historic", "PL", past_day)
+
+        context = self.get_context({"match_date": past_day.isoformat()})
+
+        self.assertEqual(context["selected_date"], past_day.isoformat())
+        self.assertEqual([row["home_team"] for row in context["predictions"]], ["historic Home"])
+
+    def test_duplicate_provider_rows_render_once_without_rewriting_snapshots(self):
+        day = self.today + timedelta(days=1)
+        first = MatchPrediction.objects.create(
+            match_id="provider-one-123",
+            home_team="Manchester City",
+            away_team="Fulham FC",
+            match_date=day,
+            competition="PL",
+            predicted_home_goals=2,
+            predicted_away_goals=0,
+        )
+        MatchPrediction.objects.create(
+            match_id="provider-two-456",
+            home_team="Man City",
+            away_team="Fulham",
+            match_date=day,
+            competition="PL",
+            predicted_home_goals=1,
+            predicted_away_goals=0,
+        )
+
+        context = self.get_context({"match_date": day.isoformat()})
+
+        self.assertEqual(len(context["predictions"]), 1)
+        self.assertEqual(context["predictions"][0]["predicted_home_goals"], 2)
+        first.refresh_from_db()
+        self.assertEqual(first.predicted_home_goals, 2)
+
     def test_sidebar_reads_only_the_default_stored_top_pick_variant(self):
         self.add_prediction("premier", "PL", self.today)
         TopPick.objects.create(
