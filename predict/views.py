@@ -2086,6 +2086,44 @@ def _build_market_rows(prediction, feature_snapshot):
     return market_rows, feature_snapshot
 
 
+def _build_match_scorer_angle(prediction, home_name, away_name):
+    """Build an optional scorer angle for one fixture without refreshing the whole date."""
+    scorers = fetch_competition_scorers(prediction.competition)
+    home_aliases = _team_name_aliases(prediction.home_team) | _team_name_aliases(home_name)
+    away_aliases = _team_name_aliases(prediction.away_team) | _team_name_aliases(away_name)
+    candidates = []
+    for scorer in scorers or []:
+        team_info = scorer.get("team") or {}
+        team_name = team_info.get("name")
+        if not team_name:
+            continue
+        aliases = _team_name_aliases(team_name)
+        side = "home" if aliases & home_aliases else "away" if aliases & away_aliases else None
+        if not side:
+            continue
+        player = scorer.get("player") or {}
+        goals = int(scorer.get("goals") or 0)
+        penalties = int(scorer.get("penalties") or 0)
+        assists = int(scorer.get("assists") or 0)
+        predicted_goals = (
+            prediction.predicted_home_goals if side == "home"
+            else prediction.predicted_away_goals
+        ) or 0
+        candidates.append({
+            "name": player.get("name") or "Unknown",
+            "team": team_name,
+            "goals": goals,
+            "assists": assists,
+            "penalties": penalties,
+            "side": side,
+            "score": goals + penalties * 0.35 + assists * 0.1 + max(float(predicted_goals), 0.6) * 1.2,
+        })
+    candidates.sort(key=lambda item: item["score"], reverse=True)
+    if not candidates:
+        return None
+    return {"top_pick": candidates[0], "alternates": candidates[1:4]}
+
+
 def build_match_detail_context(prediction, source=None):
     meta_home = get_team_metadata(prediction.home_team, prediction.competition)
     meta_away = get_team_metadata(prediction.away_team, prediction.competition)
@@ -2116,15 +2154,7 @@ def build_match_detail_context(prediction, source=None):
 
     scorer_row = None
     try:
-        _, scorer_rows = build_anytime_scorer_rows(prediction.match_date.isoformat())
-        scorer_row = next(
-            (
-                row for row in scorer_rows
-                if _team_name_aliases(row["home_team"]) & _team_name_aliases(home_name)
-                and _team_name_aliases(row["away_team"]) & _team_name_aliases(away_name)
-            ),
-            None,
-        )
+        scorer_row = _build_match_scorer_angle(prediction, home_name, away_name)
     except Exception:
         logger.exception(
             "MATCH_DETAIL_SCORER_ANGLE_FAILED competition=%s match=%s",
