@@ -1177,6 +1177,10 @@ def _build_feature_row(home_team, away_team, team_profiles, h2h_profiles, league
         "h2h_goal_diff": h2h_summary["goal_diff"],
         "h2h_total_goals": h2h_summary["total_goals"],
         "h2h_match_count": h2h_summary["match_count"],
+        # Explicit coverage fields distinguish unavailable history from a real
+        # zero-goal/zero-form observation in diagnostics and model features.
+        "home_matches_seen": float(home_summary["matches_seen"]),
+        "away_matches_seen": float(away_summary["matches_seen"]),
         "h2h_btts_rate": h2h_summary["btts_rate"],
         "h2h_over25_rate": h2h_summary["over25_rate"],
         "home_elo": home_elo,
@@ -1425,6 +1429,8 @@ def build_training_features(df, lookback=8):
         "home_advantage",
         "home_experience",
         "away_experience",
+        "home_matches_seen",
+        "away_matches_seen",
         "experience_gap",
         "odds_home_implied",
         "odds_draw_implied",
@@ -1559,6 +1565,19 @@ def build_fixture_features(home_team, away_team, model_context):
         elo_ratings,
     )
     return pd.DataFrame([row], columns=feature_columns)
+
+
+def _estimate_goal_rate_bias(actual, predicted, min_samples=20, shrink=0.65, limit=0.35):
+    """Return a conservative residual correction from a chronological holdout."""
+    actual = np.asarray(actual, dtype=float).reshape(-1)
+    predicted = np.asarray(predicted, dtype=float).reshape(-1)
+    if actual.size != predicted.size or actual.size < min_samples:
+        return 0.0
+    valid = np.isfinite(actual) & np.isfinite(predicted)
+    if int(valid.sum()) < min_samples:
+        return 0.0
+    residual = actual[valid] - predicted[valid]
+    return float(np.clip(np.mean(residual) * shrink, -limit, limit))
 
 
 def train_models(X, y_home, y_away, sample_weight=None):
@@ -1741,6 +1760,33 @@ def train_models(X, y_home, y_away, sample_weight=None):
     except Exception as e:
         logger.warning(f" Calibration skipped: {e}")
 
+    # Estimate systematic goal-rate error on the chronological holdout.
+    # This is an empirical residual correction, not a fixed goal bonus. Shrink
+    # it and cap it so small/noisy samples cannot materially distort forecasts.
+    goal_bias_home = goal_bias_away = 0.0
+    try:
+        if len(X_te) >= 20:
+            predicted_home_holdout = np.asarray(model_home.predict(X_te), dtype=float)
+            predicted_away_holdout = np.asarray(model_away.predict(X_te), dtype=float)
+            residual_home = np.asarray(yh_te, dtype=float) - predicted_home_holdout
+            residual_away = np.asarray(ya_te, dtype=float) - predicted_away_holdout
+            goal_bias_home = _estimate_goal_rate_bias(yh_te, predicted_home_holdout)
+            goal_bias_away = _estimate_goal_rate_bias(ya_te, predicted_away_holdout)
+            logger.info(
+                "GOAL_RATE_CALIBRATION holdout=%d home_bias=%.3f away_bias=%.3f "
+                "home_residual_sd=%.3f away_residual_sd=%.3f",
+                len(X_te), goal_bias_home, goal_bias_away,
+                float(np.std(residual_home)), float(np.std(residual_away)),
+            )
+        else:
+            logger.info("GOAL_RATE_CALIBRATION skipped: holdout=%d (need 20)", len(X_te))
+    except Exception as exc:
+        logger.warning("Goal-rate residual calibration skipped: %s", exc)
+
+    calibrator = calibrator or {}
+    calibrator["_goal_bias_home"] = goal_bias_home
+    calibrator["_goal_bias_away"] = goal_bias_away
+
     # ── SHAP feature importance ──────────────────────────────────────────
     try:
         import shap
@@ -1764,6 +1810,8 @@ def train_competition_models(training_df, lookback=8):
     sample_weight = np.linspace(0.35, 1.0, num=len(X)) if len(X) else None
     model_home, model_away, _, calibrator = train_models(X, y_home, y_away, sample_weight=sample_weight)
     model_context["calibrator"] = calibrator
+    model_context["goal_bias_home"] = float(calibrator.get("_goal_bias_home", 0.0))
+    model_context["goal_bias_away"] = float(calibrator.get("_goal_bias_away", 0.0))
     return model_home, model_away, model_context
 
 
@@ -1971,6 +2019,14 @@ def predict_match_outcome(home_team, away_team, models, label_encoder=None):
     # int(round(x)) never produces 0 when the regression always outputs ≥ 0.6.
     raw_h = float(np.clip(ph, 0.1, 6))
     raw_a = float(np.clip(pa, 0.1, 6))
+
+    # Apply only residual bias measured on a chronological holdout. No static
+    # league/team bonus is introduced; absent or undersized holdouts mean zero.
+    if isinstance(model_extra, dict):
+        raw_h += float(np.clip(model_extra.get("goal_bias_home", 0.0), -0.35, 0.35))
+        raw_a += float(np.clip(model_extra.get("goal_bias_away", 0.0), -0.35, 0.35))
+        raw_h = float(np.clip(raw_h, 0.1, 6))
+        raw_a = float(np.clip(raw_a, 0.1, 6))
 
     # ── Adaptive ELO blend ───────────────────────────────────────────────
     # When XGBoost disagrees strongly with ELO, blend in the ELO-based goal
