@@ -99,3 +99,25 @@ class TeamLogoDashboardTests(TestCase):
         self.assertIn("catalog-crest.png", rendered)
         self.assertIn("provider-crest.png", rendered)
         self.assertIn("Source: catalogue", rendered)
+
+
+    def test_selected_league_loads_only_that_competition(self):
+        from django.test import RequestFactory
+        from predict.views import team_logos_preview
+
+        request = RequestFactory().get("/team_logos/?league=PL")
+        standings = [{"team": {"name": "Arsenal", "shortName": "ARS", "crest": "provider-crest.png"}}]
+        with patch("predict.views.competitions", {"PL": "Premier League", "SA": "Serie A"}):
+            with patch("predict.views.get_league_table", return_value=standings) as table:
+                with patch("predict.views.get_team_metadata", return_value={
+                    "shortName": "ARS", "crest": "catalog-crest.png", "logo_source": "catalogue"
+                }):
+                    with patch("predict.views.resolve_competition_logo", return_value="league-logo.png"):
+                        response = team_logos_preview(request)
+
+        table.assert_called_once_with("PL")
+        self.assertEqual(response.status_code, 200)
+        rendered = response.content.decode("utf-8")
+        self.assertIn("Premier League", rendered)
+        self.assertIn("Arsenal", rendered)
+        self.assertNotIn("Serie A", rendered)
