@@ -59,7 +59,7 @@
     <div class="metric"><div class="metric-label">Competitions monitored</div><div class="metric-value">{{ totals.competitions }}</div><div class="muted">Configured leagues</div></div>
     <div class="metric"><div class="metric-label">Training records cached</div><div class="metric-value">{{ totals.training_entries }}</div><div class="muted">Historical model input</div></div>
     <div class="metric"><div class="metric-label">Predictions saved</div><div class="metric-value">{{ totals.predictions }}</div><div class="muted">{{ totals.competitions_with_predictions }} leagues with output</div></div>
-    <div class="metric"><div class="metric-label">Upcoming predictions</div><div class="metric-value">{{ totals.upcoming_predictions }}</div><div class="muted">{{ totals.competitions_without_upcoming }} leagues need fixture review</div></div>
+    <div class="metric"><div class="metric-label">Upcoming predictions</div><div class="metric-value">{{ totals.upcoming_predictions }}</div><div class="muted">{{ totals.competitions_without_upcoming }} leagues need output review</div></div>
   </div>
 
   <section class="panel">
@@ -69,7 +69,7 @@
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Competition</th><th>Provider</th><th>Training data</th><th>Saved predictions</th><th>Upcoming</th><th>Latest match</th><th>Coverage</th><th>Fixture source</th><th>Action</th></tr></thead>
+        <thead><tr><th>Competition</th><th>Provider</th><th>Training data</th><th>Saved predictions</th><th>Upcoming predictions</th><th>Latest match</th><th>Coverage stage</th><th>Fixture discovery</th><th>Action</th></tr></thead>
         <tbody>
         {% for row in competition_rows %}
           <tr>
