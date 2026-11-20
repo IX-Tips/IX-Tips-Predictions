@@ -4,7 +4,7 @@ from unittest.mock import patch
 from django.http import HttpResponse
 from django.test import RequestFactory, TestCase
 
-from predict.models import MatchPrediction
+from predict.models import MatchPrediction, TopPick
 from predict.views import predictions_view
 
 
@@ -80,3 +80,32 @@ class PredictionsWindowAndLeagueFilterTests(TestCase):
         )
         self.assertEqual(context["selected_competition"], "")
         self.assertGreaterEqual(len(context["competition_options"]), 3)
+
+    def test_sidebar_reads_only_the_default_stored_top_pick_variant(self):
+        self.add_prediction("premier", "PL", self.today)
+        TopPick.objects.create(
+            match_date=self.today,
+            home_team="premier Home",
+            away_team="premier Away",
+            variant="1",
+            tip="1",
+            confidence=62,
+        )
+        TopPick.objects.create(
+            match_date=self.today,
+            home_team="other Home",
+            away_team="other Away",
+            variant="2",
+            tip="2",
+            confidence=99,
+        )
+
+        context = self.get_context({"match_date": self.today.isoformat()})
+
+        stored = [
+            pick
+            for picks in context["top_predictions"].values()
+            for pick in picks
+        ]
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(stored[0]["tip"], "1")
