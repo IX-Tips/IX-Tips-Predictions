@@ -3,11 +3,11 @@
 This command is a conservative, read-only discovery step—not a live fixture provider.
 
 Run:
-\`\`\`
+~~~
 python manage.py audit_public_fixture_sources
 python manage.py audit_public_fixture_sources --code NGA
 python manage.py audit_public_fixture_sources --code KEN
-\`\`\`
+~~~
 
 Configured probes: Nigeria's NPFL fixtures/results page and RSSSF's Kenya 2026/27
 league page. The command checks robots.txt before fetching a configured page,
@@ -26,7 +26,7 @@ by crawling.
 
 ## Parser experiment
 
-The experimental parser in \`predict/rsssf_audit_parser.py\` handles RSSSF-style
+The experimental parser in **predict/rsssf_audit_parser.py** handles RSSSF-style
 round headings, month-name date blocks (for example, [Oct 10]), numeric dates,
 and scheduled or completed fixture rows. It rolls season dates into the next
 calendar year when the month is before the configured season start month.
