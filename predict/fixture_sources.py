@@ -103,6 +103,114 @@ def get_provider_diagnostic(competition_code, provider):
     return _diagnostic_cache_get(provider_diagnostic_key(competition_code, provider))
 
 
+def result_provider_diagnostic_key(competition_code, provider):
+    return f"result_provider_diagnostic::{competition_code}::{provider}"
+
+
+def record_result_provider_diagnostic(competition_code, provider, status, result_count=0, error=None, match_date=None):
+    """Keep result-feed health separate from fixture-discovery diagnostics."""
+    key = result_provider_diagnostic_key(competition_code, provider)
+    previous = _diagnostic_cache_get(key, {}) or {}
+    now = timezone.now().isoformat()
+    state = {
+        "competition": competition_code,
+        "provider": provider,
+        "status": status,
+        "result_count": int(result_count or 0),
+        "last_checked": now,
+        "last_match_date": str(match_date) if match_date else None,
+        "last_error": str(error)[:500] if error else None,
+        "last_result_success": previous.get("last_result_success"),
+    }
+    if status == "results_found" and result_count:
+        state["last_result_success"] = now
+    _diagnostic_cache_set(key, state, timeout=PROVIDER_DIAGNOSTIC_TTL)
+    return state
+
+
+def get_result_provider_diagnostic(competition_code, provider):
+    return _diagnostic_cache_get(result_provider_diagnostic_key(competition_code, provider))
+
+
+def _result_provider_order(competition_code):
+    """Return every enabled result-capable source mapped to this competition."""
+    from . import providers
+
+    ordered = []
+    for provider in [get_provider(competition_code), *_provider_order(competition_code)]:
+        if provider not in ordered:
+            ordered.append(provider)
+
+    # Add independent result feeds only where the competition has an explicit
+    # mapping. This avoids speculative calls to providers that cannot cover it.
+    if competition_code in providers.FOOTBALL_DATA_UK_CODES:
+        ordered.append("UK")
+    if providers.LF_KEY and competition_code in LIVEFOOTBALL_LEAGUE_IDS:
+        ordered.append("LF")
+    if providers.AF_KEY and competition_code in APIFOOTBALL_LEAGUE_IDS:
+        ordered.append("AF")
+    if supports_open_matchday(competition_code):
+        ordered.append("OM")
+    if supports_openfootball(competition_code):
+        ordered.append("OF")
+
+    result = []
+    for provider in ordered:
+        if provider in result:
+            continue
+        if providers._PROVIDER_DISPATCH.get(provider, {}).get("fetch_matches_by_date") is not None:
+            result.append(provider)
+    return result
+
+
+def fetch_result_matches_by_date(competition_code, match_date):
+    """Merge final scores from all configured, mapped result feeds for a date."""
+    merged = {}
+    for provider in _result_provider_order(competition_code):
+        configured, credential_name = provider_configuration(provider, competition_code)
+        if not configured:
+            record_result_provider_diagnostic(
+                competition_code, provider, "not_configured",
+                error=f"{credential_name} is missing, disabled, or not mapped",
+                match_date=match_date,
+            )
+            continue
+        try:
+            matches = _dispatch_explicit_provider(provider, competition_code, match_date) or []
+        except Exception as exc:
+            record_result_provider_diagnostic(
+                competition_code, provider, "error", error=exc, match_date=match_date,
+            )
+            logger.warning(
+                "Result provider %s failed for %s on %s: %s",
+                provider, competition_code, match_date, exc,
+            )
+            continue
+
+        result_count = 0
+        for match in matches:
+            key = _fixture_key(match)
+            if key is None:
+                continue
+            has_result = _has_result(match)
+            if has_result:
+                result_count += 1
+            existing = merged.get(key)
+            if existing is None or (has_result and not _has_result(existing)):
+                merged[key] = match
+
+        record_result_provider_diagnostic(
+            competition_code, provider,
+            "results_found" if result_count else ("fixtures_found_no_results" if matches else "empty_response"),
+            result_count=result_count, match_date=match_date,
+        )
+
+    return sorted(
+        merged.values(),
+        key=lambda item: (item.get("utcDate") or "", (item.get("homeTeam") or {}).get("name") or ""),
+    )
+
+
 def _provider_order(competition_code):
     configured = FIXTURE_PROVIDER_ORDER.get(competition_code)
     if isinstance(configured, str):

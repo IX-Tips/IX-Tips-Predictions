@@ -247,9 +247,10 @@ def normalize_team_lookup_key(name):
 
 
 def fetch_matches_for_status_refresh(competition_code, match_date):
-    # Merge primary and Open Matchday results for reliable status refresh.
-    from .fixture_sources import fetch_fixture_matches_by_date
-    return fetch_fixture_matches_by_date(None, competition_code, match_date)
+    # Query every enabled, mapped result-capable feed. Some fixture providers
+    # publish no live events but do publish completed scores later.
+    from .fixture_sources import fetch_result_matches_by_date
+    return fetch_result_matches_by_date(competition_code, match_date)
 
 
 def normalize_api_match_status(api_status):
@@ -1552,7 +1553,10 @@ def admin_task_dashboard(request):
     """Staff dashboard: report training, fixture discovery and prediction output separately."""
     from django.http import HttpResponseForbidden
     from .providers import get_provider
-    from .fixture_sources import _provider_order, get_provider_diagnostic, provider_configuration
+    from .fixture_sources import (
+        _provider_order, get_provider_diagnostic, provider_configuration,
+        _result_provider_order, get_result_provider_diagnostic,
+    )
 
     if not request.user.is_staff:
         return HttpResponseForbidden("Staff access is required.")
@@ -1588,6 +1592,23 @@ def admin_task_dashboard(request):
                 "status":state.get("status","never_checked"),"fixture_count":state.get("fixture_count",0),
                 "last_checked":state.get("last_checked"),"last_success":state.get("last_success"),
                 "last_match_date":state.get("last_match_date"),"last_error":state.get("last_error")})
+        result_diagnostics=[]
+        for result_provider in _result_provider_order(code):
+            result_configured,result_credential=provider_configuration(result_provider,code)
+            result_state=get_result_provider_diagnostic(code,result_provider) or {}
+            result_diagnostics.append({
+                "provider":result_provider,
+                "configured":result_configured,
+                "credential_name":result_credential,
+                "status":result_state.get("status","never_checked"),
+                "result_count":result_state.get("result_count",0),
+                "last_checked":result_state.get("last_checked"),
+                "last_result_success":result_state.get("last_result_success"),
+                "last_match_date":result_state.get("last_match_date"),
+                "last_error":result_state.get("last_error"),
+            })
+        result_sources_with_scores=[d["provider"] for d in result_diagnostics if d["last_result_success"]]
+        result_statuses=[d["status"] for d in result_diagnostics if d["status"]!="never_checked"]
         found=[d for d in diagnostics if d["status"]=="fixtures_found"]
         checked=[d for d in diagnostics if d["status"]!="never_checked"]
         primary=next((d for d in diagnostics if d["provider"]==provider),diagnostics[0] if diagnostics else {})
@@ -1608,6 +1629,9 @@ def admin_task_dashboard(request):
         if found: totals["competitions_with_fixtures"]+=1
         if not checked: totals["competitions_never_checked"]+=1
         competition_rows.append({"code":code,"name":name,"provider":provider,"provider_diagnostics":diagnostics,
+            "result_provider_diagnostics":result_diagnostics,
+            "result_sources_with_scores":result_sources_with_scores,
+            "result_provider_status":"results_found" if result_sources_with_scores else ("not_checked" if not result_statuses else "no_results"),
             "training_cached":df is not None,"training_entries":training_entries,"prediction_count":prediction_count,
             "upcoming_count":upcoming_count,"latest_match_date":latest_match_date,"coverage_status":coverage_status,
             "fixture_status":fixture_status,"provider_fixture_count":fixture_count,"fixture_providers":fixture_providers,
