@@ -138,7 +138,7 @@ class BulkFixtureDiscoveryTests(TestCase):
         }]
 
         from predict.fixture_sources import fetch_upcoming_fixture_groups
-        grouped = fetch_upcoming_fixture_groups(None, "TUR", days_ahead=45)
+        grouped = fetch_upcoming_fixture_groups(None, "EFLCUP", days_ahead=45)
 
         self.assertEqual(list(grouped), [sixth_day.isoformat()])
         fetch_by_date.assert_called_once_with(None, "TUR", sixth_day.isoformat())
@@ -179,7 +179,7 @@ class BulkFixtureDiscoveryTests(TestCase):
         ]
 
         from predict.fixture_sources import fetch_upcoming_fixture_groups
-        grouped = fetch_upcoming_fixture_groups(None, "TUR", days_ahead=45)
+        grouped = fetch_upcoming_fixture_groups(None, "EFLCUP", days_ahead=45)
 
         self.assertEqual(list(grouped), ["2026-11-21", "2026-11-22"])
         self.assertEqual(fetch_by_date.call_count, 2)
