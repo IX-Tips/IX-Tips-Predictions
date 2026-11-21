@@ -485,12 +485,18 @@ def fetch_fixture_matches_by_date(api_key, competition_code, match_date):
             "FIXTURE_PROVIDER_TIMING competition=%s date=%s provider=%s elapsed_seconds=%.3f status=ok fixtures=%s",
             competition_code, match_date, provider, time.monotonic() - provider_started, valid_count,
         )
-        request_health = (
-            _diagnostic_cache_get(f"provider_request_health::{provider}", {})
-            if provider in {"LF", "AF"} else {}
+        health_cache_key = (
+            "provider_request_health::AF::fixtures" if provider == "AF"
+            else "provider_request_health::LF" if provider == "LF"
+            else None
         )
+        request_health = _diagnostic_cache_get(health_cache_key, {}) if health_cache_key else {}
         recent_request_error = False
-        if request_health.get("status") == "error" and request_health.get("checked_at"):
+        if (
+            request_health.get("status") in {"error", "not_configured"}
+            and request_health.get("checked_at")
+            and (provider != "AF" or request_health.get("endpoint") == "fixtures")
+        ):
             try:
                 checked_at = timezone.datetime.fromisoformat(request_health["checked_at"])
                 recent_request_error = (timezone.now() - checked_at).total_seconds() < 90
