@@ -1,73 +1,146 @@
-"""Experimental RSSSF fixture line parser, intentionally not wired to ingestion."""
+"""Experimental RSSSF text parser; audit-only and never wired to ingestion."""
 import re
 from datetime import date
 
-DATE_RE = re.compile(r"(?<!\d)(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?(?!\d)")
-SCORE_RE = re.compile(r"\b(\d{1,2})\s*[-:]\s*(\d{1,2})\b")
-ROUND_RE = re.compile(r"\b(?:round|matchday|week|journee| jornada)\s*(\d+)\b", re.I)
+NUMERIC_DATE_RE = re.compile(
+    r"^\s*(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?\s*(.*)$"
+)
+BRACKET_DATE_RE = re.compile(
+    r"^\s*\[([A-Za-z]{3,9})\s+(\d{1,2})(?:,\s*(\d{4}))?\]\s*(.*)$"
+)
+ROUND_RE = re.compile(
+    r"^\s*(?:round|matchday|week|journee|jornada)\s*(\d+)\s*$", re.I
+)
+SCORE_RE = re.compile(
+    r"^\s*(?P<home>.+?)\s+(?P<home_goals>\d{1,2})\s*[-:]\s*"
+    r"(?P<away_goals>\d{1,2})\s+(?P<away>.+?)\s*$"
+)
+MONTHS = {
+    name.casefold(): number
+    for number, names in enumerate(
+        (
+            ("Jan", "January"), ("Feb", "February"), ("Mar", "March"),
+            ("Apr", "April"), ("May",), ("Jun", "June"),
+            ("Jul", "July"), ("Aug", "August"), ("Sep", "Sept", "September"),
+            ("Oct", "October"), ("Nov", "November"), ("Dec", "December"),
+        ),
+        1,
+    )
+    for name in names
+}
 
 
-def parse_rsssf_text(text, season_year=2026):
-    """Extract only reasonably clear dated home-away lines from text.
+def _make_date(day_text, month_text, year_text, season_year, season_start_month):
+    day, month = int(day_text), int(month_text)
+    year = int(year_text) if year_text else (
+        int(season_year) + (1 if month < int(season_start_month) else 0)
+    )
+    if year < 100:
+        year += 2000
+    return date(year, month, day)
 
-    Returns records and parser diagnostics. Ambiguous lines are skipped rather
-    than guessing. This is a candidate audit parser, not production ingestion.
+
+def parse_rsssf_text(text, season_year=2026, season_start_month=7):
+    """Parse dated RSSSF round/date blocks and score-bearing fixture rows.
+
+    Supports numeric dates on their own line or before a fixture, and RSSSF
+    month-name date headers such as [Oct 10] followed by one fixture per line.
+    Undated/TBA fixtures and ambiguous rows are not guessed.
     """
     records, skipped = [], []
     round_name = None
+    current_date = None
+
     for line_number, raw in enumerate(text.splitlines(), 1):
         line = " ".join(raw.strip().split())
         if not line:
             continue
-        round_match = ROUND_RE.search(line)
+
+        round_match = ROUND_RE.match(line)
         if round_match:
-            round_name = round_match.group(0)
-        date_match = DATE_RE.search(line)
-        if not date_match:
+            round_name = f"Round {round_match.group(1)}"
+            current_date = None
             continue
+
+        if line.casefold() in {"[tba]", "[to be announced]", "tba"}:
+            current_date = None
+            continue
+
+        remainder = line
+        numeric_date = NUMERIC_DATE_RE.match(line)
+        bracket_date = BRACKET_DATE_RE.match(line)
         try:
-            day, month = int(date_match.group(1)), int(date_match.group(2))
-            year_text = date_match.group(3)
-            year = int(year_text) if year_text else int(season_year)
-            if year < 100:
-                year += 2000
-            match_date = date(year, month, day)
+            if bracket_date:
+                month = MONTHS.get(bracket_date.group(1).casefold())
+                if month is None:
+                    raise ValueError("unknown_month")
+                current_date = _make_date(
+                    bracket_date.group(2), month, bracket_date.group(3),
+                    season_year, season_start_month,
+                )
+                remainder = bracket_date.group(4).strip()
+            elif numeric_date:
+                current_date = _make_date(
+                    numeric_date.group(1), numeric_date.group(2),
+                    numeric_date.group(3), season_year, season_start_month,
+                )
+                remainder = numeric_date.group(4).strip()
         except ValueError:
-            skipped.append({"line": line_number, "reason": "invalid_date", "text": line[:240]})
+            skipped.append({
+                "line": line_number, "reason": "invalid_date", "text": line[:240]
+            })
+            current_date = None
             continue
-        remainder = line[date_match.end():].strip(" :-|")
-        # Strip simple leading round markers or fixture labels, not arbitrary content.
-        remainder = re.sub(r"^(?:round|matchday|week)\s*\d+\s*[:.-]?\s*", "", remainder, flags=re.I)
-        # Locate a score if present; split teams at the score, otherwise at ' - '.
-        score_match = SCORE_RE.search(remainder)
-        score = None
-        if score_match:
-            home = remainder[:score_match.start()].strip(" :-|")
-            away = remainder[score_match.end():].strip(" :-|")
-            score = (int(score_match.group(1)), int(score_match.group(2)))
-        else:
-            parts = re.split(r"\s+[-–—]\s+", remainder, maxsplit=1)
-            if len(parts) != 2:
-                skipped.append({"line": line_number, "reason": "unrecognized_fixture", "text": line[:240]})
-                continue
-            home, away = parts[0].strip(), parts[1].strip()
-        # Remove trailing metadata commonly following score/team names.
-        home = re.sub(r"\s{2,}.*$", "", home).strip()
-        away = re.split(r"\s{2,}|\s+(?:\(|\[)", away, maxsplit=1)[0].strip()
+
+        # A date header may have no fixture on the same line. Keep it active
+        # for following rows until the next date, round, or TBA marker.
+        if not remainder:
+            continue
+        if current_date is None:
+            continue
+
+        score_match = SCORE_RE.match(remainder)
+        if not score_match:
+            if re.search(r"\s\d{1,2}\s*[-:]\s*\d{1,2}\s", remainder):
+                skipped.append({
+                    "line": line_number, "reason": "ambiguous_fixture",
+                    "text": line[:240],
+                })
+            continue
+
+        home = score_match.group("home").strip()
+        away = score_match.group("away").strip()
         if not home or not away or home.casefold() == away.casefold():
-            skipped.append({"line": line_number, "reason": "invalid_teams", "text": line[:240]})
+            skipped.append({
+                "line": line_number, "reason": "invalid_teams", "text": line[:240]
+            })
             continue
+
         records.append({
-            "date": match_date.isoformat(), "home": home, "away": away,
-            "score": score, "round": round_name, "source_line": line_number,
-            "status": "finished" if score is not None else "scheduled",
+            "date": current_date.isoformat(),
+            "home": home,
+            "away": away,
+            "score": (
+                int(score_match.group("home_goals")),
+                int(score_match.group("away_goals")),
+            ),
+            "round": round_name,
+            "source_line": line_number,
+            "status": "finished",
         })
-    # Preserve first record, drop exact duplicate date/team identities.
+
     unique, seen = [], set()
     for record in records:
-        key = (record["date"], record["home"].casefold(), record["away"].casefold())
+        key = (
+            record["date"], record["home"].casefold(), record["away"].casefold()
+        )
         if key in seen:
             continue
         seen.add(key)
         unique.append(record)
-    return {"fixtures": unique, "skipped": skipped, "lines_scanned": len(text.splitlines())}
+
+    return {
+        "fixtures": unique,
+        "skipped": skipped,
+        "lines_scanned": len(text.splitlines()),
+    }
