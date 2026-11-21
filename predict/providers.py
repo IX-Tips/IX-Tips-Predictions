@@ -226,7 +226,7 @@ def af_league_id(competition_code, season_year=None):
             break
 
     try:
-        cache.set(cache_key, league_id or 0, timeout=60 * 60 * 24)
+        cache.set(cache_key, league_id or 0, timeout=(60 * 60 * 24 if league_id else 60 * 60))
     except Exception:
         pass
     if not league_id:
