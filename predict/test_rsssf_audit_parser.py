@@ -29,7 +29,9 @@ Ulinzi Stars 0-2 Tusker
 
     def test_parses_scheduled_fixture_under_known_date(self):
         parsed = parse_rsssf_text(
-            "Round 8\\n[Nov 22]\\nGor Mahia - AFC Leopards",
+            """Round 8
+[Nov 22]
+Gor Mahia - AFC Leopards""",
             season_year=2026,
         )
         self.assertEqual(len(parsed["fixtures"]), 1)
@@ -40,15 +42,19 @@ Ulinzi Stars 0-2 Tusker
 
     def test_rolls_season_dates_into_following_calendar_year(self):
         parsed = parse_rsssf_text(
-            "Round 20\\n[Jan 8]\\nBandari 1-0 Tusker",
+            """Round 20
+[Jan 8]
+Bandari 1-0 Tusker""",
             season_year=2026,
         )
         self.assertEqual(parsed["fixtures"][0]["date"], "2027-01-08")
 
     def test_ignores_tba_rows_without_inventing_a_date(self):
         parsed = parse_rsssf_text(
-            "Round 7\\n[tba]\\nNairobi United - Mara Sugar\\n"
-            "Tusker - Shabana",
+            """Round 7
+[tba]
+Nairobi United - Mara Sugar
+Tusker - Shabana""",
             season_year=2026,
         )
         self.assertEqual(parsed["fixtures"], [])
@@ -65,7 +71,8 @@ Ulinzi Stars 0-2 Tusker
 
     def test_skips_invalid_dates_and_unparseable_text(self):
         parsed = parse_rsssf_text(
-            "32.11.2026 Team A - Team B\\nOct 2026: fixtures to be announced"
+            """32.11.2026 Team A - Team B
+Oct 2026: fixtures to be announced"""
         )
         self.assertEqual(parsed["fixtures"], [])
         self.assertEqual(parsed["skipped"][0]["reason"], "invalid_date")
