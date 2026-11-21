@@ -251,6 +251,25 @@ try:
 except (TypeError, ValueError, json.JSONDecodeError):
     APIFOOTBALL_LEAGUE_IDS = {}
 
+# Resolve these competitions through the authenticated API-Football v3
+# /leagues endpoint instead of hardcoding legacy v2 numeric IDs. Results are
+# cached by the provider adapter; exact country + league-name matching is used.
+APIFOOTBALL_LEAGUE_SEARCH = {
+    "ALG": ("Algeria", "Ligue 1"),
+    "EGY": ("Egypt", "Premier League"),
+    "GHA": ("Ghana", "Premier League"),
+    "KEN": ("Kenya", "FKF Premier League"),
+    "MWI": ("Malawi", "Super League"),
+    "MAR": ("Morocco", "Botola Pro"),
+    "NGA": ("Nigeria", "NPFL"),
+    "RWA": ("Rwanda", "Premier League"),
+    "SEN": ("Senegal", "Ligue 1"),
+    "TZA": ("Tanzania", "Ligi kuu Bara"),
+    "UGA": ("Uganda", "Premier League"),
+    "ZMB": ("Zambia", "Super League"),
+    "ZWE": ("Zimbabwe", "Premier Soccer League"),
+}
+
 # AF leagues that run on a single calendar year (season == year). Everything
 # else is treated as a split (Aug–May) season where season == start year.
 APIFOOTBALL_CALENDAR_YEAR = {"MLS", "LMX", "MWI", "ZWE"}
