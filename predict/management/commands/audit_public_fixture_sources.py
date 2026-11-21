@@ -7,10 +7,10 @@ import json
 import re
 from urllib.robotparser import RobotFileParser
 
-from predict.rsssf_audit_parser import extract_rsssf_text, parse_rsssf_text
-
 import requests
 from django.core.management.base import BaseCommand
+
+from predict.rsssf_audit_parser import extract_rsssf_text, parse_rsssf_text
 
 SOURCES = {
     "NGA": {
