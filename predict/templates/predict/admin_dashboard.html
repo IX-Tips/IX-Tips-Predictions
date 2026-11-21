@@ -138,6 +138,35 @@
 
   <section class="panel">
     <div class="panel-head">
+      <div><h2>Final-result coverage</h2><div class="muted">Independent feeds checked during result reconciliation. This is separate from fixture discovery and live-score availability; the dashboard reads cached diagnostics only.</div></div>
+      <span class="muted">No provider requests are made by this page</span>
+    </div>
+    <div class="table-wrap">
+      <table style="min-width:1100px">
+        <thead><tr><th>Competition</th><th>Result provider</th><th>Configuration</th><th>Result feed status</th><th>Scores returned</th><th>Last checked date</th><th>Last successful result</th><th>Details / error</th></tr></thead>
+        <tbody>
+        {% for row in competition_rows %}
+          {% for diag in row.result_provider_diagnostics %}
+          <tr>
+            {% if forloop.first %}<td rowspan="{{ row.result_provider_diagnostics|length }}"><strong>{{ row.name }}</strong><span class="comp-code">{{ row.code }}</span></td>{% endif %}
+            <td><strong>{{ diag.provider }}</strong></td>
+            <td>{% if diag.configured %}<span class="pill enabled">Configured</span>{% else %}<span class="pill missing">Not configured</span><div class="muted">{{ diag.credential_name }}</div>{% endif %}</td>
+            <td><span class="diag-status {{ diag.status }}">{{ diag.status|default:"never_checked"|title|cut:"_" }}</span></td>
+            <td>{{ diag.result_count|default:0 }}</td>
+            <td>{{ diag.last_checked|default:"Never" }}</td>
+            <td>{{ diag.last_result_success|default:"—" }}</td>
+            <td>{% if diag.last_error %}<div class="diag-error">{{ diag.last_error }}</div>{% elif diag.last_match_date %}<span class="muted">Checked {{ diag.last_match_date }}</span>{% elif not diag.configured %}<span class="muted">Provider is not configured or not mapped for this competition.</span>{% else %}<span class="muted">No result attempt recorded yet.</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        {% empty %}<tr><td colspan="8" class="empty">No result-provider mappings available.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="muted" style="margin-top:12px">“Never checked” means no reconciliation attempt has recorded a result for that provider yet; it does not mean the provider has no historical results. A zero result count means the checked feed returned no completed scores for the checked date.</div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
       <div><h2>Prediction controls</h2><div class="muted">Run the same scheduled jobs used by the background pipeline.</div></div>
       <a class="btn btn-primary" href="{% url 'live_predictions' %}">View predictions</a>
     </div>
