@@ -249,14 +249,24 @@ def af_league_id(competition_code, season_year=None):
     expected_country = country.casefold()
     expected_name = " ".join(league_name.casefold().split())
     league_id = None
-    for row in rows:
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
         league = row.get("league", {}) or {}
         country_data = row.get("country", {}) or {}
-        actual_country = str(country_data.get("name") or "").casefold()
-        actual_name = " ".join(str(league.get("name") or "").casefold().split())
+        if not isinstance(league, dict) or not isinstance(country_data, dict):
+            continue
+        actual_country = str(country_data.get("name") or "").strip().casefold()
+        actual_name = " ".join(str(league.get("name") or "").strip().casefold().split())
         candidate_id = league.get("id")
-        if actual_country == expected_country and actual_name == expected_name and candidate_id:
-            league_id = int(candidate_id)
+        # Provider search results can contain malformed entries. Ignore them
+        # rather than failing the entire competition's fixture fallback.
+        try:
+            candidate_id = int(candidate_id)
+        except (TypeError, ValueError):
+            continue
+        if candidate_id > 0 and actual_country == expected_country and actual_name == expected_name:
+            league_id = candidate_id
             break
 
     try:
