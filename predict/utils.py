@@ -1105,39 +1105,58 @@ def _lookup_normalized_team_value(mapping, team_name, default=None):
 
 
 def _build_feature_row(home_team, away_team, team_profiles, h2h_profiles, league_defaults,
-                       lookback, current_date, elo_ratings=None, odds_row=None):
+                       lookback, current_date, elo_ratings=None, odds_row=None,
+                       summary_cache=None):
     home_profile = _lookup_normalized_team_value(team_profiles, home_team, _new_team_profile())
     away_profile = _lookup_normalized_team_value(team_profiles, away_team, _new_team_profile())
     elo_ratings = elo_ratings or {}
     home_elo = float(_lookup_normalized_team_value(elo_ratings, home_team, 1500.0))
     away_elo = float(_lookup_normalized_team_value(elo_ratings, away_team, 1500.0))
-    home_summary = _summarize_profile(
-        home_profile,
-        venue="home",
-        lookback=lookback,
-        scored_default=league_defaults["home_goals"],
-        conceded_default=league_defaults["away_goals"],
-        points_default=1.45,
-        current_date=current_date,
+    def summarize(profile, venue, window, scored_default, conceded_default, points_default):
+        if summary_cache is None:
+            return _summarize_profile(
+                profile, venue, window, scored_default, conceded_default,
+                points_default, current_date,
+            )
+        # Profile objects are immutable while a fixture model context is used
+        # for inference. Include their rolling-history shape/date in the key so
+        # a refreshed profile cannot reuse a summary from an older snapshot.
+        profile_signature = (
+            len(profile.get("overall_scored", ())),
+            len(profile.get(f"{venue}_scored", ())),
+            profile.get("last_match_date"),
+        )
+        key = (
+            id(profile), profile_signature, venue, int(window),
+            float(scored_default), float(conceded_default),
+            float(points_default), str(current_date),
+        )
+        cached = summary_cache.get(key)
+        if cached is None:
+            cached = _summarize_profile(
+                profile, venue, window, scored_default, conceded_default,
+                points_default, current_date,
+            )
+            summary_cache[key] = cached
+        return cached
+
+    home_summary = summarize(
+        home_profile, "home", lookback,
+        league_defaults["home_goals"], league_defaults["away_goals"], 1.45,
     )
-    away_summary = _summarize_profile(
-        away_profile,
-        venue="away",
-        lookback=lookback,
-        scored_default=league_defaults["away_goals"],
-        conceded_default=league_defaults["home_goals"],
-        points_default=1.1,
-        current_date=current_date,
+    away_summary = summarize(
+        away_profile, "away", lookback,
+        league_defaults["away_goals"], league_defaults["home_goals"], 1.1,
     )
     # Multi-window: sprint (3 matches = momentum) and season (20 matches = baseline)
-    home_sprint = _summarize_profile(home_profile, "home", 3,
-        league_defaults["home_goals"], league_defaults["away_goals"], 1.5, current_date)
-    away_sprint = _summarize_profile(away_profile, "away", 3,
-        league_defaults["away_goals"], league_defaults["home_goals"], 1.1, current_date)
-    home_season = _summarize_profile(home_profile, "home", 20,
-        league_defaults["home_goals"], league_defaults["away_goals"], 1.5, current_date)
-    away_season = _summarize_profile(away_profile, "away", 20,
-        league_defaults["away_goals"], league_defaults["home_goals"], 1.1, current_date)
+    home_sprint = summarize(home_profile, "home", 3,
+        league_defaults["home_goals"], league_defaults["away_goals"], 1.5)
+    away_sprint = summarize(away_profile, "away", 3,
+        league_defaults["away_goals"], league_defaults["home_goals"], 1.1)
+    home_season = summarize(home_profile, "home", 20,
+        league_defaults["home_goals"], league_defaults["away_goals"], 1.5)
+    away_season = summarize(away_profile, "away", 20,
+        league_defaults["away_goals"], league_defaults["home_goals"], 1.1)
 
     normalized_pair = tuple(sorted((
         _normalize_team_lookup_value(home_team),
@@ -1696,6 +1715,7 @@ def build_fixture_features(home_team, away_team, model_context):
         lookback,
         current_date,
         elo_ratings,
+        summary_cache=context.setdefault("_team_summary_cache", {}),
     )
     return pd.DataFrame([row], columns=feature_columns)
 
