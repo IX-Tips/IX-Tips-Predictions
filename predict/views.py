@@ -246,11 +246,12 @@ def normalize_team_lookup_key(name):
     return _normalize_team_lookup_value(name)
 
 
-def fetch_matches_for_status_refresh(competition_code, match_date):
-    # Query every enabled, mapped result-capable feed. Some fixture providers
-    # publish no live events but do publish completed scores later.
+def fetch_matches_for_status_refresh(competition_code, match_date, target_pairs=None):
+    # Some feeds publish no live events but do publish completed scores later.
     from .fixture_sources import fetch_result_matches_by_date
-    return fetch_result_matches_by_date(competition_code, match_date)
+    return fetch_result_matches_by_date(
+        competition_code, match_date, target_pairs=target_pairs,
+    )
 
 
 def normalize_api_match_status(api_status):
@@ -274,19 +275,28 @@ def refresh_prediction_statuses(competition_code, match_date, force=False):
     if not force and cache.get(refresh_key):
         return 0
 
-    matches = fetch_matches_for_status_refresh(competition_code, match_date_str)
-    if not matches:
-        cache.set(refresh_key, True, timeout=300)
-        return 0
-
     prediction_rows = list(MatchPrediction.objects.filter(
         competition=competition_code,
         match_date=match_date_str,
     ))
+    if not prediction_rows:
+        cache.set(refresh_key, True, timeout=300)
+        return 0
+
     predictions = {}
     for prediction_row in prediction_rows:
         pair = (_team_key(prediction_row.home_team), _team_key(prediction_row.away_team))
         predictions.setdefault(pair, []).append(prediction_row)
+
+    # Only unique saved team pairs can be reconciled safely. Pass these targets
+    # to the provider chain so it can stop once every saved fixture has a score.
+    target_pairs = {pair for pair, rows in predictions.items() if len(rows) == 1}
+    matches = fetch_matches_for_status_refresh(
+        competition_code, match_date_str, target_pairs=target_pairs,
+    )
+    if not matches:
+        cache.set(refresh_key, True, timeout=300)
+        return 0
 
     updated = 0
     for match in matches:
