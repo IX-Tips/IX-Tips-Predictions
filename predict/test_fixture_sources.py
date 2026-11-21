@@ -301,14 +301,18 @@ class CrossProviderFixtureIdentityTests(TestCase):
         self, record, dispatch, configuration, provider_order
     ):
         primary = {
-            **self.fixture,
             "utcDate": "2026-11-10T23:30:00Z",
+            "status": "TIMED",
+            "homeTeam": {"name": "Alpha FC"},
+            "awayTeam": {"name": "Beta"},
+            "score": {"fullTime": {"home": None, "away": None}},
         }
         fallback = {
-            **self.fixture,
             "id": "om-1",
             "utcDate": "2026-11-11T00:15:00Z",
             "status": "FINISHED",
+            "homeTeam": {"name": "Alpha"},
+            "awayTeam": {"name": "Beta"},
             "score": {"fullTime": {"home": 3, "away": 1}},
         }
         dispatch.side_effect = [[primary], [fallback]]
