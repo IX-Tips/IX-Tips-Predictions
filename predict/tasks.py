@@ -105,9 +105,13 @@ def _predict_next_fixtures_for_competition_impl(competition_code, match_date=Non
             match_date=match_date_to_use, competition_code=competition_code,
         )
         total_saved += len(predictions)
+
+    # Fetch odds once per competition run for all discovered fixture dates.
+    # Calling force=True inside the date loop caused repeated provider fetches.
+    if dates_with_fixtures:
         refresh_competition_odds(
             competition_code, force=True,
-            match_dates=[date.fromisoformat(match_date_to_use)],
+            match_dates=[date.fromisoformat(value) for value in dates_with_fixtures],
         )
 
     result = {
