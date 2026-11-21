@@ -90,6 +90,19 @@ class ProviderDiagnosticsTests(TestCase):
         self.assertFalse(configured)
         self.assertEqual(label, "LIVEFOOTBALL_KEY")
 
+    @patch("predict.fixture_sources.AF_KEY", "configured-test-key")
+    def test_africa_uses_api_football_only_as_a_configured_fallback(self):
+        from predict.fixture_sources import _provider_order
+
+        self.assertEqual(_provider_order("KEN"), ["OF", "AF"])
+
+    def test_calendar_year_african_leagues_use_the_current_year(self):
+        from datetime import date
+        from predict.providers import af_season
+
+        self.assertEqual(af_season("MWI", date(2026, 2, 1)), 2026)
+        self.assertEqual(af_season("ZWE", date(2026, 2, 1)), 2026)
+
     @patch("predict.openfootball._latest_available_season_year", return_value=2025)
     @patch("predict.openfootball.current_season_year", return_value=2026)
     @patch("predict.fixture_sources.record_provider_diagnostic")
