@@ -80,7 +80,7 @@ class ProviderDiagnosticsTests(TestCase):
 
         health_writes = [
             call for call in cache_set.call_args_list
-            if call.args[0] == "provider_request_health::AF"
+            if call.args[0] == "provider_request_health::AF::fixtures"
         ]
         self.assertEqual(len(health_writes), 1)
         self.assertEqual(health_writes[0].args[1]["status"], "error")
@@ -99,7 +99,7 @@ class ProviderDiagnosticsTests(TestCase):
 
         health = next(
             call.args[1] for call in cache_set.call_args_list
-            if call.args[0] == "provider_request_health::AF"
+            if call.args[0] == "provider_request_health::AF::fixtures"
         )
         self.assertEqual(health["status"], "ok")
         self.assertIsNone(health["last_error"])
@@ -108,6 +108,7 @@ class ProviderDiagnosticsTests(TestCase):
         "status": "error",
         "last_error": "Invalid API key",
         "checked_at": timezone.now().isoformat(),
+        "endpoint": "fixtures",
     })
     @patch("predict.fixture_sources.record_provider_diagnostic")
     @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
