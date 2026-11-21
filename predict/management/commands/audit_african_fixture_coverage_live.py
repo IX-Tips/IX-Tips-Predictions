@@ -58,7 +58,9 @@ class Command(BaseCommand):
             league_id = af_league_id(code, season)
             lookup_health = self._health("leagues")
             if not league_id:
-                if lookup_health.get("status") == "error":
+                if self._plan_restricted(lookup_health):
+                    state = "API_PLAN_RESTRICTED"
+                elif lookup_health.get("status") == "error":
                     state = "LEAGUE_LOOKUP_ERROR"
                 elif lookup_health.get("status") == "not_configured":
                     state = "API_NOT_CONFIGURED"
@@ -73,7 +75,9 @@ class Command(BaseCommand):
 
             fixtures = _af_get("fixtures", {"league": league_id, "season": season})
             fixture_health = self._health("fixtures")
-            if fixture_health.get("status") == "error":
+            if self._plan_restricted(fixture_health):
+                state = "API_PLAN_RESTRICTED"
+            elif fixture_health.get("status") == "error":
                 state = "FIXTURE_REQUEST_ERROR"
             elif fixture_health.get("status") == "not_configured":
                 state = "API_NOT_CONFIGURED"
@@ -86,6 +90,18 @@ class Command(BaseCommand):
                 f"API health={fixture_health.get('status', 'unknown')}; "
                 f"detail={fixture_health.get('last_error') or '-'}"
             )
+
+    @staticmethod
+    def _plan_restricted(health):
+        """Recognize API-Sports plan/season restrictions in structured errors."""
+        error = health.get("last_error")
+        if isinstance(error, dict):
+            return any(str(key).casefold() == "plan" for key in error)
+        if isinstance(error, str):
+            return "plan" in error.casefold() and (
+                "season" in error.casefold() or "access" in error.casefold()
+            )
+        return False
 
     @staticmethod
     def _health(endpoint):
