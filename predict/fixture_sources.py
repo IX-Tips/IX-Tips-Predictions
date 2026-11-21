@@ -165,9 +165,14 @@ def _result_provider_order(competition_code):
     return result
 
 
-def fetch_result_matches_by_date(competition_code, match_date):
-    """Merge final scores from all configured, mapped result feeds for a date."""
+def fetch_result_matches_by_date(competition_code, match_date, target_pairs=None):
+    """Merge result feeds, stopping once every requested saved fixture has a score.
+
+    ``target_pairs`` contains normalized (home, away) identities for saved
+    predictions being reconciled. When omitted, retain full-feed behavior.
+    """
     merged = {}
+    targets = set(target_pairs or ())
     for provider in _result_provider_order(competition_code):
         configured, credential_name = provider_configuration(provider, competition_code)
         if not configured:
@@ -207,11 +212,20 @@ def fetch_result_matches_by_date(competition_code, match_date):
             result_count=result_count, match_date=match_date,
         )
 
+        if targets:
+            resolved = {
+                (_team_key((item.get("homeTeam") or {}).get("name")),
+                 _team_key((item.get("awayTeam") or {}).get("name")))
+                for item in merged.values()
+                if _has_result(item)
+            }
+            if targets.issubset(resolved):
+                break
+
     return sorted(
         merged.values(),
         key=lambda item: (item.get("utcDate") or "", (item.get("homeTeam") or {}).get("name") or ""),
     )
-
 
 def _provider_order(competition_code):
     configured = FIXTURE_PROVIDER_ORDER.get(competition_code)
