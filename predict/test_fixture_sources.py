@@ -18,13 +18,25 @@ class FixtureAggregationTests(TestCase):
     @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
     @patch("predict.fixture_sources._provider_order", return_value=["UK", "AF"])
     @patch("predict.fixture_sources._dispatch_explicit_provider")
-    def test_tries_fallback_and_deduplicates_same_fixture(self, dispatch, provider_order, configuration):
+    def test_primary_fixture_response_skips_secondary_provider(self, dispatch, provider_order, configuration):
         second = {
             **self.fixture,
             "id": 12345,
             "homeTeam": {"name": "Alpha", "crest": "crest.png"},
         }
         dispatch.side_effect = [[self.fixture], [second]]
+
+        matches = fetch_fixture_matches_by_date(None, "BEL", "2026-11-10")
+
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(dispatch.call_count, 1)
+        self.assertEqual(matches[0]["id"], "uk-1")
+
+    @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
+    @patch("predict.fixture_sources._provider_order", return_value=["UK", "AF"])
+    @patch("predict.fixture_sources._dispatch_explicit_provider")
+    def test_empty_primary_response_uses_secondary_fallback(self, dispatch, provider_order, configuration):
+        dispatch.side_effect = [[], [self.fixture]]
 
         matches = fetch_fixture_matches_by_date(None, "BEL", "2026-11-10")
 
