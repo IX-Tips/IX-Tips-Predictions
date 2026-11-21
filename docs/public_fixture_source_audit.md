@@ -23,3 +23,13 @@ Do not configure a source with explicit anti-automation restrictions or bypass
 access controls. Review terms, robots policy, and reuse obligations before
 building a production adapter. Sources are deliberately curated, not discovered
 by crawling.
+
+
+## Parser experiment
+
+A separate experimental parser (`predict/rsssf_audit_parser.py`) can parse a limited
+set of clearly dated text lines for audit/testing. It deliberately skips ambiguous
+lines and does not fetch pages, persist data, or feed prediction jobs. Automated
+fixture-shaped test lines validate basic scheduled/completed distinction and
+exact-duplicate handling. Real page extraction quality must be measured before
+this parser is used against RSSSF page output.
