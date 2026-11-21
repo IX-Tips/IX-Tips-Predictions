@@ -193,3 +193,58 @@ class BulkFixtureDiscoveryTests(TestCase):
             from predict.fixture_sources import fetch_upcoming_fixture_groups
             grouped = fetch_upcoming_fixture_groups(None, "SAU", days_ahead=45)
         self.assertIn("2026-11-21", grouped)
+
+
+
+class ResultProviderFallbackTests(TestCase):
+    def setUp(self):
+        self.fixture = {
+            "id": "primary-1",
+            "utcDate": "2026-11-10T15:00:00Z",
+            "status": "TIMED",
+            "homeTeam": {"name": "Alpha FC"},
+            "awayTeam": {"name": "Beta"},
+            "score": {"fullTime": {"home": None, "away": None}},
+        }
+
+    @patch("predict.fixture_sources._result_provider_order", return_value=["FD", "OM"])
+    @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
+    @patch("predict.fixture_sources._dispatch_explicit_provider")
+    @patch("predict.fixture_sources.record_result_provider_diagnostic")
+    def test_fallback_result_fills_primary_fixture_without_result(
+        self, record, dispatch, configuration, provider_order
+    ):
+        completed = {
+            **self.fixture,
+            "id": "om-1",
+            "status": "FINISHED",
+            "score": {"fullTime": {"home": 2, "away": 1}},
+        }
+        dispatch.side_effect = [[self.fixture], [completed]]
+        from predict.fixture_sources import fetch_result_matches_by_date
+        matches = fetch_result_matches_by_date("BEL", "2026-11-10")
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["score"]["fullTime"], {"home": 2, "away": 1})
+        self.assertEqual(matches[0]["status"], "FINISHED")
+        self.assertEqual(dispatch.call_count, 2)
+
+    @patch("predict.fixture_sources._result_provider_order", return_value=["FD", "OM"])
+    @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
+    @patch("predict.fixture_sources._dispatch_explicit_provider")
+    @patch("predict.fixture_sources.record_result_provider_diagnostic")
+    def test_primary_complete_result_keeps_precedence_over_fallback(
+        self, record, dispatch, configuration, provider_order
+    ):
+        primary_result = {
+            **self.fixture, "status": "FINISHED",
+            "score": {"fullTime": {"home": 1, "away": 0}},
+        }
+        fallback_result = {
+            **self.fixture, "id": "om-1", "status": "FINISHED",
+            "score": {"fullTime": {"home": 2, "away": 0}},
+        }
+        dispatch.side_effect = [[primary_result], [fallback_result]]
+        from predict.fixture_sources import fetch_result_matches_by_date
+        matches = fetch_result_matches_by_date("BEL", "2026-11-10")
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["score"]["fullTime"], {"home": 1, "away": 0})
