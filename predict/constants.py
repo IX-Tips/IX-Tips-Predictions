@@ -240,33 +240,16 @@ OPENFOOTBALL_COMPETITIONS = {
     "ZWE": {"country": "zimbabwe", "suffix": "zw1", "calendar_year": True},
 }
 
-# API-Football numeric league IDs. African IDs below are from the
-# provider's published league catalogue (checked 2026-11-21). They are only
-# used when APIFOOTBALL_API_KEY is configured; leagues without a verified ID
-# can still be added/overridden through APIFOOTBALL_LEAGUE_IDS.
-_DEFAULT_APIFOOTBALL_LEAGUE_IDS = {
-    "ALG": 34,   # Algeria — Ligue 1
-    "EGY": 141,  # Egypt — Premier League
-    "GHA": 177,  # Ghana — Premier League
-    "KEN": 216,  # Kenya — FKF Premier League
-    "MWI": 564,  # Malawi — Super League
-    "MAR": 239,  # Morocco — Botola Pro
-    "NGA": 248,  # Nigeria — NPFL
-    "RWA": 550,  # Rwanda — Premier League
-    "SEN": 497,  # Senegal — Ligue 1
-    "TZA": 551,  # Tanzania — Ligi kuu Bara
-    "UGA": 555,  # Uganda — Premier League
-    "ZMB": 342,  # Zambia — Super League
-    "ZWE": 343,  # Zimbabwe — Premier Soccer League
-}
+# API-Football v3 numeric league IDs. Configure only IDs verified against
+# the v3 dashboard/account; do not copy IDs from the legacy v2 coverage list.
+# Example: APIFOOTBALL_LEAGUE_IDS='{"BEL": 144, "TUR": 203}'
 try:
-    _apifootball_overrides = {
+    APIFOOTBALL_LEAGUE_IDS = {
         str(code).upper(): int(league_id)
         for code, league_id in json.loads(os.getenv("APIFOOTBALL_LEAGUE_IDS", "{}")).items()
     }
 except (TypeError, ValueError, json.JSONDecodeError):
-    _apifootball_overrides = {}
-APIFOOTBALL_LEAGUE_IDS = {**_DEFAULT_APIFOOTBALL_LEAGUE_IDS, **_apifootball_overrides}
+    APIFOOTBALL_LEAGUE_IDS = {}
 
 # AF leagues that run on a single calendar year (season == year). Everything
 # else is treated as a split (Aug–May) season where season == start year.
