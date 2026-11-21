@@ -218,3 +218,35 @@ class PredictionFeatureCoverageTests(SimpleTestCase):
         build_fixture_features("Beta FC", "Alpha FC", context)
         self.assertIs(context["_normalized_h2h_profiles"], cached_index)
         self.assertIn(("alpha", "beta"), cached_index)
+
+
+    def test_legacy_team_profile_index_is_cached_and_normalized(self):
+        from .utils import build_fixture_features
+
+        history = pd.DataFrame([{
+            "home_team": "Alpha FC", "away_team": "Beta FC",
+            "home_goals": 2, "away_goals": 1,
+            "utc_date": pd.Timestamp("2025-01-01T15:00:00Z"),
+        }])
+        alpha_profile = {
+            "overall_scored": [2.0], "overall_conceded": [1.0],
+            "overall_points": [3.0], "overall_goal_diff": [1.0],
+            "overall_clean_sheet": [0], "overall_failed_to_score": [0],
+            "home_scored": [2.0], "home_conceded": [1.0],
+            "home_points": [3.0], "home_goal_diff": [1.0],
+            "home_clean_sheet": [0], "home_failed_to_score": [0],
+            "away_scored": [], "away_conceded": [], "away_points": [],
+            "away_goal_diff": [], "away_clean_sheet": [],
+            "away_failed_to_score": [], "last_match_date": None,
+        }
+        context = {
+            "history": history,
+            "feature_columns": None,
+            "team_profiles": {"Alpha FC": alpha_profile},
+            "h2h_profiles": {},
+        }
+        build_fixture_features("Alpha FC", "Beta FC", context)
+        cached_index = context["_normalized_team_profiles"]
+        self.assertIs(cached_index["alpha"], alpha_profile)
+        build_fixture_features("Alpha FC", "Beta FC", context)
+        self.assertIs(context["_normalized_team_profiles"], cached_index)
