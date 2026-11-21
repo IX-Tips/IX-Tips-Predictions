@@ -269,6 +269,7 @@ def _team_key(value):
         "sporting lisbon": "sporting cp",
         "sporting clube de portugal": "sporting cp",
         "sporting clube portugal": "sporting cp",
+        "sporting portugal": "sporting cp",
     }
     return aliases.get(value, value)
 
