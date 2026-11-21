@@ -248,3 +248,77 @@ class ResultProviderFallbackTests(TestCase):
         matches = fetch_result_matches_by_date("BEL", "2026-11-10")
         self.assertEqual(len(matches), 1)
         self.assertEqual(matches[0]["score"]["fullTime"], {"home": 1, "away": 0})
+
+
+
+class CrossProviderFixtureIdentityTests(TestCase):
+    def test_team_names_with_common_provider_variants_share_identity(self):
+        from predict.fixture_sources import _team_key
+
+        pairs = [
+            ("Manchester United", "Man Utd"),
+            ("Paris Saint-Germain", "PSG"),
+            ("Bayern München", "Bayern Munich"),
+            ("Internazionale", "Inter Milan"),
+            ("Sporting Clube de Portugal", "Sporting CP"),
+            ("Athletic Club", "Athletic Bilbao"),
+        ]
+        for left, right in pairs:
+            with self.subTest(left=left, right=right):
+                self.assertEqual(_team_key(left), _team_key(right))
+
+    def test_fixture_key_normalizes_equivalent_timezone_offsets(self):
+        from predict.fixture_sources import _fixture_key
+
+        utc_fixture = {
+            "utcDate": "2026-11-10T23:30:00Z",
+            "homeTeam": {"name": "Manchester United"},
+            "awayTeam": {"name": "PSG"},
+        }
+        offset_fixture = {
+            "utcDate": "2026-11-11T01:30:00+02:00",
+            "homeTeam": {"name": "Man Utd"},
+            "awayTeam": {"name": "Paris Saint-Germain"},
+        }
+        self.assertEqual(_fixture_key(utc_fixture), _fixture_key(offset_fixture))
+
+    def test_fixture_key_rejects_invalid_kickoff(self):
+        from predict.fixture_sources import _fixture_key
+
+        fixture = {
+            "utcDate": "not-a-date",
+            "homeTeam": {"name": "Alpha"},
+            "awayTeam": {"name": "Beta"},
+        }
+        self.assertIsNone(_fixture_key(fixture))
+
+
+    @patch("predict.fixture_sources._result_provider_order", return_value=["FD", "OM"])
+    @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
+    @patch("predict.fixture_sources._dispatch_explicit_provider")
+    @patch("predict.fixture_sources.record_result_provider_diagnostic")
+    def test_fallback_matches_same_fixture_when_provider_date_differs_by_one_day(
+        self, record, dispatch, configuration, provider_order
+    ):
+        primary = {
+            "utcDate": "2026-11-10T23:30:00Z",
+            "status": "TIMED",
+            "homeTeam": {"name": "Alpha FC"},
+            "awayTeam": {"name": "Beta"},
+            "score": {"fullTime": {"home": None, "away": None}},
+        }
+        fallback = {
+            "id": "om-1",
+            "utcDate": "2026-11-11T00:15:00Z",
+            "status": "FINISHED",
+            "homeTeam": {"name": "Alpha"},
+            "awayTeam": {"name": "Beta"},
+            "score": {"fullTime": {"home": 3, "away": 1}},
+        }
+        dispatch.side_effect = [[primary], [fallback]]
+
+        from predict.fixture_sources import fetch_result_matches_by_date
+        matches = fetch_result_matches_by_date("BEL", "2026-11-10")
+
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["score"]["fullTime"], {"home": 3, "away": 1})
