@@ -91,7 +91,7 @@ class ProviderDiagnosticsTests(TestCase):
         self.assertEqual(label, "LIVEFOOTBALL_KEY")
 
     @patch("predict.fixture_sources.AF_KEY", "configured-test-key")
-    @patch("predict.fixture_sources.APIFOOTBALL_LEAGUE_IDS", {"KEN": 216})
+    @patch("predict.fixture_sources.APIFOOTBALL_LEAGUE_IDS", {"KEN": 999999})
     def test_africa_uses_api_football_only_as_a_configured_fallback(self):
         from predict.fixture_sources import _provider_order
 
