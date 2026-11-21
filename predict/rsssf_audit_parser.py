@@ -1,6 +1,7 @@
 """Experimental RSSSF text parser; audit-only and never wired to ingestion."""
 import re
 from datetime import date
+from html.parser import HTMLParser
 
 NUMERIC_DATE_RE = re.compile(
     r"^\s*(\d{1,2})[./-](\d{1,2})(?:[./-]\s*(\d{2,4}))?\s*(.*)$"
@@ -146,3 +147,39 @@ def parse_rsssf_text(text, season_year=2026, season_start_month=7):
         "skipped": skipped,
         "lines_scanned": len(text.splitlines()),
     }
+
+
+class _RSSSFHTMLTextExtractor(HTMLParser):
+    """Convert source HTML into line-oriented text without fetching anything."""
+
+    BLOCK_TAGS = {
+        "br", "div", "p", "pre", "li", "tr", "h1", "h2", "h3",
+        "section", "article",
+    }
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() in self.BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag.lower() in self.BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_data(self, data):
+        self.parts.append(data)
+
+
+def extract_rsssf_text(html):
+    """Return line-oriented visible text from an already-fetched HTML page."""
+    extractor = _RSSSFHTMLTextExtractor()
+    extractor.feed(html)
+    extractor.close()
+    return "\n".join(
+        " ".join(line.split())
+        for line in "".join(extractor.parts).splitlines()
+        if line.strip()
+    )
