@@ -250,3 +250,25 @@ class PredictionFeatureCoverageTests(SimpleTestCase):
         self.assertIs(cached_index["alpha"], alpha_profile)
         build_fixture_features("Alpha FC", "Beta FC", context)
         self.assertIs(context["_normalized_team_profiles"], cached_index)
+
+    def test_fixture_team_summaries_are_reused_within_model_context(self):
+        history = pd.DataFrame([{
+            "home_team": "Alpha FC",
+            "away_team": "Beta FC",
+            "home_goals": 2,
+            "away_goals": 1,
+            "utc_date": pd.Timestamp("2025-01-01T15:00:00Z"),
+        }])
+        context = {"history": history, "feature_columns": None}
+        from . import utils
+        with patch("predict.utils._summarize_profile", wraps=utils._summarize_profile) as summarizer:
+            first = build_fixture_features("Alpha FC", "Beta FC", context)
+            first_call_count = summarizer.call_count
+            second = build_fixture_features("Alpha FC", "Beta FC", context)
+
+        self.assertEqual(first_call_count, 6)
+        self.assertEqual(summarizer.call_count, first_call_count)
+        self.assertEqual(first.iloc[0]["home_recent_scored"], second.iloc[0]["home_recent_scored"])
+        self.assertEqual(first.iloc[0]["away_recent_scored"], second.iloc[0]["away_recent_scored"])
+        self.assertEqual(len(context["_team_summary_cache"]), 6)
+
