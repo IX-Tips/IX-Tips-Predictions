@@ -1,6 +1,6 @@
 from django.test import SimpleTestCase
 
-from predict.rsssf_audit_parser import parse_rsssf_text
+from predict.rsssf_audit_parser import extract_rsssf_text, parse_rsssf_text
 
 
 class RSSSFParserAuditTests(SimpleTestCase):
@@ -76,3 +76,15 @@ Oct 2026: fixtures to be announced"""
         )
         self.assertEqual(parsed["fixtures"], [])
         self.assertEqual(parsed["skipped"][0]["reason"], "invalid_date")
+
+
+    def test_extracts_line_oriented_text_from_rsssf_html(self):
+        html = (
+            "<html><body><h2>Round 1</h2><pre>[Oct 10]\n"
+            "Mathare United 0-0 APS Bomet\n"
+            "Posta Rangers 0-1 Shabana</pre></body></html>"
+        )
+        text = extract_rsssf_text(html)
+        parsed = parse_rsssf_text(text, season_year=2026)
+        self.assertEqual(len(parsed["fixtures"]), 2)
+        self.assertEqual(parsed["fixtures"][0]["date"], "2026-10-10")
