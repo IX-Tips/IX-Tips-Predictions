@@ -249,7 +249,7 @@ def normalize_team_lookup_key(name):
 def fetch_matches_for_status_refresh(competition_code, match_date):
     # Query every enabled, mapped result-capable feed. Some fixture providers
     # publish no live events but do publish completed scores later.
-    from .fixture_sources import fetch_result_matches_by_date
+    from .fixture_sources import fetch_result_matches_by_date, _team_key
     return fetch_result_matches_by_date(competition_code, match_date)
 
 
@@ -277,13 +277,14 @@ def refresh_prediction_statuses(competition_code, match_date, force=False):
         cache.set(refresh_key, True, timeout=300)
         return 0
 
-    predictions = {
-        (normalize_team_lookup_key(p.home_team), normalize_team_lookup_key(p.away_team)): p
-        for p in MatchPrediction.objects.filter(
-            competition=competition_code,
-            match_date=match_date_str,
-        )
-    }
+    prediction_rows = list(MatchPrediction.objects.filter(
+        competition=competition_code,
+        match_date=match_date_str,
+    ))
+    predictions = {}
+    for prediction_row in prediction_rows:
+        pair = (_team_key(prediction_row.home_team), _team_key(prediction_row.away_team))
+        predictions.setdefault(pair, []).append(prediction_row)
 
     updated = 0
     for match in matches:
@@ -298,11 +299,13 @@ def refresh_prediction_statuses(competition_code, match_date, force=False):
             timeout=60 * 60 * 12,
         )
 
-        prediction = predictions.get(
-            (normalize_team_lookup_key(home_team), normalize_team_lookup_key(away_team))
-        )
-        if not prediction:
+        candidates = predictions.get((_team_key(home_team), _team_key(away_team)), [])
+        # A normalized name pair can still be ambiguous if duplicate fixtures
+        # were saved for the same competition/date. Never attach a score to an
+        # arbitrary row in that case.
+        if len(candidates) != 1:
             continue
+        prediction = candidates[0]
 
         normalized_status = normalize_api_match_status(match.get("status"))
         changed = prediction.status != normalized_status
