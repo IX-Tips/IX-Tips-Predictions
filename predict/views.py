@@ -288,9 +288,17 @@ def refresh_prediction_statuses(competition_code, match_date, force=False):
         pair = (_team_key(prediction_row.home_team), _team_key(prediction_row.away_team))
         predictions.setdefault(pair, []).append(prediction_row)
 
-    # Only unique saved team pairs can be reconciled safely. Pass these targets
-    # to the provider chain so it can stop once every saved fixture has a score.
-    target_pairs = {pair for pair, rows in predictions.items() if len(rows) == 1}
+    # Target only rows that still need status/result reconciliation. Exclude
+    # already-complete historical scores so they cannot force needless fallback calls.
+    target_pairs = {
+        pair
+        for pair, rows in predictions.items()
+        if len(rows) == 1 and (
+            rows[0].status != "FINISHED"
+            or rows[0].actual_home_goals is None
+            or rows[0].actual_away_goals is None
+        )
+    }
     matches = fetch_matches_for_status_refresh(
         competition_code, match_date_str, target_pairs=target_pairs,
     )
