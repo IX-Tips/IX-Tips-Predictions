@@ -485,18 +485,22 @@ def fetch_fixture_matches_by_date(api_key, competition_code, match_date):
             "FIXTURE_PROVIDER_TIMING competition=%s date=%s provider=%s elapsed_seconds=%.3f status=ok fixtures=%s",
             competition_code, match_date, provider, time.monotonic() - provider_started, valid_count,
         )
-        request_health = _diagnostic_cache_get("provider_request_health::LF", {}) if provider == "LF" else {}
-        recent_lf_error = False
+        request_health = (
+            _diagnostic_cache_get(f"provider_request_health::{provider}", {})
+            if provider in {"LF", "AF"} else {}
+        )
+        recent_request_error = False
         if request_health.get("status") == "error" and request_health.get("checked_at"):
             try:
                 checked_at = timezone.datetime.fromisoformat(request_health["checked_at"])
-                recent_lf_error = (timezone.now() - checked_at).total_seconds() < 90
+                recent_request_error = (timezone.now() - checked_at).total_seconds() < 90
             except (TypeError, ValueError):
-                recent_lf_error = False
-        if not valid_count and recent_lf_error:
+                recent_request_error = False
+        if not valid_count and recent_request_error:
+            provider_label = "API-Football" if provider == "AF" else "Live-Football-Data"
             record_provider_diagnostic(
                 competition_code, provider, "error",
-                error=request_health.get("last_error") or "Live-Football-Data request failed",
+                error=request_health.get("last_error") or f"{provider_label} request failed",
                 match_date=match_date,
             )
         else:
