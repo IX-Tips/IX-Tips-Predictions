@@ -1,0 +1,198 @@
+name: Oracle Cloud deployment
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ix-tips-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Django checks and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile Python source
+        run: |
+          python -m py_compile $(find predict score_predictor -name "*.py" -not -path "*/migrations/*" -not -path "*/__pycache__/*")
+
+      - name: Django system check
+        env:
+          DATABASE_URL: "sqlite://:memory:"
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-test-only-not-for-production
+        run: python manage.py check
+
+      - name: Run prediction app tests
+        env:
+          DATABASE_URL: "sqlite://:memory:"
+          REDIS_URL: redis://localhost:6379/0
+          SECRET_KEY: ci-test-only-not-for-production
+        run: python manage.py test predict --verbosity=2
+
+  build:
+    name: Build production image
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Build image tags used by the ix_tips Compose project
+        run: |
+          docker build --pull \
+            --tag ix_tips-app:latest \
+            --tag ix_tips-cron:latest .
+
+      - name: Save image archive
+        run: docker save ix_tips-app:latest ix_tips-cron:latest --output ix-tips-image.tar
+
+      - name: Upload image for Oracle runner
+        uses: actions/upload-artifact@v4
+        with:
+          name: ix-tips-production-image
+          path: ix-tips-image.tar
+          if-no-files-found: error
+          retention-days: 1
+
+  deploy:
+    name: Deploy to Oracle Cloud VM
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: self-hosted
+    timeout-minutes: 25
+    steps:
+      - name: Download production image
+        uses: actions/download-artifact@v4
+        with:
+          name: ix-tips-production-image
+          path: ./deployment-image
+
+      - name: Deploy safely using the existing Compose project
+        env:
+          IMAGE_ARCHIVE: ./deployment-image/ix-tips-image.tar
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          PROJECT_DIR="/opt/ix_tips"
+          COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
+          OVERRIDE_FILE="$PROJECT_DIR/docker-compose.override.yml"
+
+          test -f "$COMPOSE_FILE" || {
+            echo "Missing active Compose file: $COMPOSE_FILE"
+            exit 1
+          }
+          test -f "$PROJECT_DIR/.env" || {
+            echo "Missing production .env; refusing to deploy."
+            exit 1
+          }
+          test -f "$IMAGE_ARCHIVE"
+
+          COMPOSE=(docker compose --project-name ix_tips --project-directory "$PROJECT_DIR" -f "$COMPOSE_FILE")
+          if [[ -f "$OVERRIDE_FILE" ]]; then
+            COMPOSE+=(-f "$OVERRIDE_FILE")
+          fi
+
+          "${COMPOSE[@]}" config --quiet
+          docker info >/dev/null
+
+          # Keep the currently deployed image tags for a quick rollback.
+          HAVE_APP=0
+          HAVE_CRON=0
+          if docker image inspect ix_tips-app:latest >/dev/null 2>&1; then
+            docker image tag ix_tips-app:latest ix_tips-app:rollback
+            HAVE_APP=1
+          fi
+          if docker image inspect ix_tips-cron:latest >/dev/null 2>&1; then
+            docker image tag ix_tips-cron:latest ix_tips-cron:rollback
+            HAVE_CRON=1
+          fi
+
+          rollback() {
+            status=$?
+            if [[ $status -ne 0 ]]; then
+              echo "Deployment failed; restoring previous image tags where available."
+              if [[ "$HAVE_APP" == "1" ]]; then
+                docker image tag ix_tips-app:rollback ix_tips-app:latest
+              fi
+              if [[ "$HAVE_CRON" == "1" ]]; then
+                docker image tag ix_tips-cron:rollback ix_tips-cron:latest
+              fi
+              if [[ "$HAVE_APP" == "1" && "$HAVE_CRON" == "1" ]]; then
+                "${COMPOSE[@]}" up -d --no-build --force-recreate app cron || true
+              fi
+            fi
+            exit "$status"
+          }
+          trap rollback EXIT
+
+          # Keep the currently deployed images (tagged as rollback above), but
+          # remove disposable build cache and dangling images before loading.
+          # This is important on the small Oracle VM; named volumes are untouched.
+          echo "Disk usage before Docker cleanup:"
+          df -h "$PROJECT_DIR"
+          docker system df
+          docker builder prune --all --force
+          docker image prune --force
+          echo "Disk usage after Docker cleanup:"
+          df -h "$PROJECT_DIR"
+          docker system df
+
+          docker load --input "$IMAGE_ARCHIVE"
+          # Docker now owns the image layers; remove the duplicate tar archive.
+          rm -f "$IMAGE_ARCHIVE"
+
+          # Apply schema changes before replacing the currently serving app.
+          "${COMPOSE[@]}" run --rm --no-deps app python manage.py migrate --noinput
+
+          # Only app and cron are recreated. The database and named volumes remain untouched.
+          "${COMPOSE[@]}" up -d --no-build --force-recreate app cron
+
+          HEALTHY=0
+          for attempt in $(seq 1 24); do
+            # The app enforces HTTPS in production. This probe bypasses the public TLS proxy,
+            # so send the trusted proxy header to test the health view without triggering
+            # Django SecurityMiddleware\x27s HTTP-to-HTTPS redirect.
+            STATUS=$(curl --silent --output /dev/null --write-out "%{http_code}" --header "X-Forwarded-Proto: https" http://127.0.0.1:8000/health/ || true)
+            echo "Oracle app health check $attempt/24: HTTP $STATUS"
+            if [[ "$STATUS" == "200" ]]; then
+              HEALTHY=1
+              break
+            fi
+            sleep 5
+          done
+
+          if [[ "$HEALTHY" != "1" ]]; then
+            echo "Application did not become healthy."
+            "${COMPOSE[@]}" ps
+            "${COMPOSE[@]}" logs --tail=100 app
+            exit 1
+          fi
+
+          trap - EXIT
+          echo "Oracle deployment completed successfully."
