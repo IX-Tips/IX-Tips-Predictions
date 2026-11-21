@@ -91,11 +91,42 @@ class ProviderDiagnosticsTests(TestCase):
         self.assertEqual(label, "LIVEFOOTBALL_KEY")
 
     @patch("predict.fixture_sources.AF_KEY", "configured-test-key")
-    @patch("predict.fixture_sources.APIFOOTBALL_LEAGUE_IDS", {"KEN": 999999})
+    @patch("predict.fixture_sources.APIFOOTBALL_LEAGUE_SEARCH", {"KEN": ("Kenya", "FKF Premier League")})
     def test_africa_uses_api_football_only_as_a_configured_fallback(self):
         from predict.fixture_sources import _provider_order
 
         self.assertEqual(_provider_order("KEN"), ["OF", "AF"])
+
+    @patch("predict.providers.cache.set")
+    @patch("predict.providers.cache.get", return_value=None)
+    @patch("predict.providers._af_get")
+    @patch("predict.providers.APIFOOTBALL_LEAGUE_SEARCH", {"KEN": ("Kenya", "FKF Premier League")})
+    def test_af_league_id_uses_exact_v3_country_and_name_lookup(
+        self, lookup, cache_get, cache_set
+    ):
+        lookup.return_value = [
+            {"league": {"id": 999, "name": "Premier League"}, "country": {"name": "Kenya"}},
+            {"league": {"id": 123, "name": "FKF Premier League"}, "country": {"name": "Kenya"}},
+            {"league": {"id": 456, "name": "FKF Premier League"}, "country": {"name": "Uganda"}},
+        ]
+
+        from predict.providers import af_league_id
+        self.assertEqual(af_league_id("KEN", 2026), 123)
+        lookup.assert_called_once_with(
+            "leagues", {"search": "FKF Premier League", "country": "Kenya", "season": 2026}
+        )
+
+    @patch("predict.providers.cache.set")
+    @patch("predict.providers.cache.get", return_value=None)
+    @patch("predict.providers._af_get", return_value=[
+        {"league": {"id": 123, "name": "Premier League"}, "country": {"name": "Uganda"}}
+    ])
+    @patch("predict.providers.APIFOOTBALL_LEAGUE_SEARCH", {"KEN": ("Kenya", "FKF Premier League")})
+    def test_af_league_id_rejects_wrong_country_or_name(
+        self, lookup, cache_get, cache_set
+    ):
+        from predict.providers import af_league_id
+        self.assertIsNone(af_league_id("KEN", 2026))
 
     def test_calendar_year_african_leagues_use_the_current_year(self):
         from datetime import date
