@@ -249,10 +249,13 @@ def refresh_live_match_data():
 
 def _refresh_live_match_data_impl():
     """
-    Refresh only today's/yesterday's unresolved fixtures.
+    Reconcile unresolved fixtures from the previous 14 days.
 
-    This deliberately avoids polling every future fixture and avoids bypassing
-    the per-competition/date cache on every five-minute scheduler tick.
+    Some providers publish final scores hours or days after kickoff and do not
+    expose live events. Keep revisiting unresolved predictions across this
+    delayed-publication window. Provider adapters cache their season/feed
+    responses, so this does not force a network request on every five-minute
+    scheduler tick. Completed rows with both actual scores are excluded.
     """
     import time
     from datetime import timedelta
@@ -261,13 +264,20 @@ def _refresh_live_match_data_impl():
 
     started = time.monotonic()
     today = date.today()
-    yesterday = today - timedelta(days=1)
+    reconciliation_start = today - timedelta(days=14)
     refresh_pairs = list(
         MatchPrediction.objects.filter(
-            match_date__range=(yesterday, today),
+            match_date__range=(reconciliation_start, today),
         ).filter(
-            Q(status__in=("TIMED", "LIVE", "PAUSED", "SUSPENDED"))
-            | Q(status="FINISHED", actual_home_goals__isnull=True)
+            Q(status__in=("TIMED", "LIVE", "PAUSED", "SUSPENDED", "POSTPONED"))
+            | Q(
+                status="FINISHED",
+                actual_home_goals__isnull=True,
+            )
+            | Q(
+                status="FINISHED",
+                actual_away_goals__isnull=True,
+            )
         ).values("match_date", "competition").distinct()
     )
 
