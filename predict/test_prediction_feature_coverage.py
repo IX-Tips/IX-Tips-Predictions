@@ -5,6 +5,7 @@ import pandas as pd
 
 from .utils import (
     _estimate_goal_rate_bias,
+    build_fixture_features,
     build_training_features,
     compute_cross_league_elo,
     summarize_competition_feature_coverage,
@@ -159,6 +160,27 @@ class PredictionFeatureCoverageTests(SimpleTestCase):
         self.assertEqual(coverage[0]["competition"], "UNKNOWN")
         self.assertEqual(coverage[0]["fixtures"], 1)
         self.assertEqual(coverage[0]["home_history_pct"], 0.0)
+
+
+    def test_legacy_context_builds_fallback_profiles_once_for_repeated_fixtures(self):
+        history = pd.DataFrame([
+            {
+                "home_team": "Alpha FC",
+                "away_team": "Beta FC",
+                "home_goals": 2,
+                "away_goals": 1,
+                "utc_date": "2025-01-01T15:00:00Z",
+            },
+        ])
+        context = {"history": history, "feature_columns": None}
+        with patch("predict.utils._build_profiles_from_history", wraps=__import__(
+            "predict.utils", fromlist=["_build_profiles_from_history"]
+        )._build_profiles_from_history) as profile_builder:
+            build_fixture_features("Alpha FC", "Beta FC", context)
+            build_fixture_features("Alpha FC", "Beta FC", context)
+        self.assertEqual(profile_builder.call_count, 1)
+        self.assertIn("team_profiles", context)
+        self.assertIn("h2h_profiles", context)
 
     def test_goal_rate_bias_is_shrunk_and_capped_from_holdout_residuals(self):
         actual = [1.5] * 20
