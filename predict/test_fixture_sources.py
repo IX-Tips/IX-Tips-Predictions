@@ -150,8 +150,9 @@ class ProviderDiagnosticsTests(TestCase):
     @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
     @patch("predict.fixture_sources.record_provider_diagnostic")
     @patch("predict.fixture_sources._provider_order", return_value=["LF"])
+    @patch("predict.fixture_sources._diagnostic_cache_get", return_value={})
     @patch("predict.fixture_sources._dispatch_explicit_provider", return_value=[])
-    def test_records_empty_provider_response(self, dispatch, provider_order, record, configuration):
+    def test_records_empty_provider_response(self, dispatch, health, provider_order, record, configuration):
         fetch_fixture_matches_by_date(None, "SAU", "2026-11-21")
         record.assert_called_once()
         self.assertEqual(record.call_args.args[2], "empty_response")
