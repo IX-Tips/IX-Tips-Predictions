@@ -291,3 +291,30 @@ class CrossProviderFixtureIdentityTests(TestCase):
             "awayTeam": {"name": "Beta"},
         }
         self.assertIsNone(_fixture_key(fixture))
+
+
+    @patch("predict.fixture_sources._result_provider_order", return_value=["FD", "OM"])
+    @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
+    @patch("predict.fixture_sources._dispatch_explicit_provider")
+    @patch("predict.fixture_sources.record_result_provider_diagnostic")
+    def test_fallback_matches_same_fixture_when_provider_date_differs_by_one_day(
+        self, record, dispatch, configuration, provider_order
+    ):
+        primary = {
+            **self.fixture,
+            "utcDate": "2026-11-10T23:30:00Z",
+        }
+        fallback = {
+            **self.fixture,
+            "id": "om-1",
+            "utcDate": "2026-11-11T00:15:00Z",
+            "status": "FINISHED",
+            "score": {"fullTime": {"home": 3, "away": 1}},
+        }
+        dispatch.side_effect = [[primary], [fallback]]
+
+        from predict.fixture_sources import fetch_result_matches_by_date
+        matches = fetch_result_matches_by_date("BEL", "2026-11-10")
+
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["score"]["fullTime"], {"home": 3, "away": 1})
