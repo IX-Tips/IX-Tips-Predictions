@@ -18,13 +18,25 @@ class FixtureAggregationTests(TestCase):
     @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
     @patch("predict.fixture_sources._provider_order", return_value=["UK", "AF"])
     @patch("predict.fixture_sources._dispatch_explicit_provider")
-    def test_tries_fallback_and_deduplicates_same_fixture(self, dispatch, provider_order, configuration):
+    def test_primary_fixture_response_skips_secondary_provider(self, dispatch, provider_order, configuration):
         second = {
             **self.fixture,
             "id": 12345,
             "homeTeam": {"name": "Alpha", "crest": "crest.png"},
         }
         dispatch.side_effect = [[self.fixture], [second]]
+
+        matches = fetch_fixture_matches_by_date(None, "BEL", "2026-11-10")
+
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(dispatch.call_count, 1)
+        self.assertEqual(matches[0]["id"], "uk-1")
+
+    @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
+    @patch("predict.fixture_sources._provider_order", return_value=["UK", "AF"])
+    @patch("predict.fixture_sources._dispatch_explicit_provider")
+    def test_empty_primary_response_uses_secondary_fallback(self, dispatch, provider_order, configuration):
+        dispatch.side_effect = [[], [self.fixture]]
 
         matches = fetch_fixture_matches_by_date(None, "BEL", "2026-11-10")
 
@@ -78,6 +90,64 @@ class ProviderDiagnosticsTests(TestCase):
         self.assertFalse(configured)
         self.assertEqual(label, "LIVEFOOTBALL_KEY")
 
+    @patch("predict.fixture_sources.AF_KEY", "configured-test-key")
+    @patch("predict.fixture_sources.APIFOOTBALL_LEAGUE_SEARCH", {"KEN": ("Kenya", "FKF Premier League")})
+    def test_africa_uses_api_football_only_as_a_configured_fallback(self):
+        from predict.fixture_sources import _provider_order
+
+        self.assertEqual(_provider_order("KEN"), ["OF", "AF"])
+
+    @patch("predict.providers.cache.set")
+    @patch("predict.providers.cache.get", return_value=None)
+    @patch("predict.providers._af_get")
+    @patch("predict.providers.APIFOOTBALL_LEAGUE_SEARCH", {"KEN": ("Kenya", "FKF Premier League")})
+    def test_af_league_id_uses_exact_v3_country_and_name_lookup(
+        self, lookup, cache_get, cache_set
+    ):
+        lookup.return_value = [
+            {"league": {"id": 999, "name": "Premier League"}, "country": {"name": "Kenya"}},
+            {"league": {"id": 123, "name": "FKF Premier League"}, "country": {"name": "Kenya"}},
+            {"league": {"id": 456, "name": "FKF Premier League"}, "country": {"name": "Uganda"}},
+        ]
+
+        from predict.providers import af_league_id
+        self.assertEqual(af_league_id("KEN", 2026), 123)
+        lookup.assert_called_once_with(
+            "leagues", {"search": "FKF Premier League", "country": "Kenya", "season": 2026}
+        )
+
+    @patch("predict.providers.cache.set")
+    @patch("predict.providers.cache.get", return_value=None)
+    @patch("predict.providers._af_get", return_value=[
+        {"league": {"id": 123, "name": "Premier League"}, "country": {"name": "Uganda"}}
+    ])
+    @patch("predict.providers.APIFOOTBALL_LEAGUE_SEARCH", {"KEN": ("Kenya", "FKF Premier League")})
+    def test_af_league_id_rejects_wrong_country_or_name(
+        self, lookup, cache_get, cache_set
+    ):
+        from predict.providers import af_league_id
+        self.assertIsNone(af_league_id("KEN", 2026))
+
+    def test_calendar_year_african_leagues_use_the_current_year(self):
+        from datetime import date
+        from predict.providers import af_season
+
+        self.assertEqual(af_season("MWI", date(2026, 2, 1)), 2026)
+        self.assertEqual(af_season("ZWE", date(2026, 2, 1)), 2026)
+
+    @patch("predict.openfootball._latest_available_season_year", return_value=2025)
+    @patch("predict.openfootball.current_season_year", return_value=2026)
+    @patch("predict.fixture_sources.record_provider_diagnostic")
+    @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
+    @patch("predict.fixture_sources._provider_order", return_value=["OF"])
+    @patch("predict.fixture_sources._dispatch_explicit_provider", return_value=[])
+    def test_openfootball_diagnostic_explains_missing_current_season(
+        self, dispatch, provider_order, configuration, record, current_year, latest_year
+    ):
+        fetch_fixture_matches_by_date(None, "KEN", "2026-11-21")
+        self.assertEqual(record.call_args.args[2], "empty_response")
+        self.assertIn("latest published season starts 2025", record.call_args.kwargs["error"])
+
 
 
 class BulkFixtureDiscoveryTests(TestCase):
@@ -113,10 +183,10 @@ class BulkFixtureDiscoveryTests(TestCase):
         }]
 
         from predict.fixture_sources import fetch_upcoming_fixture_groups
-        grouped = fetch_upcoming_fixture_groups(None, "TUR", days_ahead=45)
+        grouped = fetch_upcoming_fixture_groups(None, "EFLCUP", days_ahead=45)
 
         self.assertEqual(list(grouped), [sixth_day.isoformat()])
-        fetch_by_date.assert_called_once_with(None, "TUR", sixth_day.isoformat())
+        fetch_by_date.assert_called_once_with(None, "EFLCUP", sixth_day.isoformat())
 
     @patch("predict.fixture_sources.fetch_fixture_matches_by_date")
     @patch("predict.providers._om_current_matches")
@@ -154,7 +224,7 @@ class BulkFixtureDiscoveryTests(TestCase):
         ]
 
         from predict.fixture_sources import fetch_upcoming_fixture_groups
-        grouped = fetch_upcoming_fixture_groups(None, "TUR", days_ahead=45)
+        grouped = fetch_upcoming_fixture_groups(None, "EFLCUP", days_ahead=45)
 
         self.assertEqual(list(grouped), ["2026-11-21", "2026-11-22"])
         self.assertEqual(fetch_by_date.call_count, 2)

@@ -240,9 +240,9 @@ OPENFOOTBALL_COMPETITIONS = {
     "ZWE": {"country": "zimbabwe", "suffix": "zw1", "calendar_year": True},
 }
 
-# API-Football numeric league IDs (verified against the account on 2026-05-27).
-# Optional API-Football league IDs can be supplied without a code change:
-# APIFOOTBALL_LEAGUE_IDS='{"BEL": 144, "TUR": 203}'
+# API-Football v3 numeric league IDs. Configure only IDs verified against
+# the v3 dashboard/account; do not copy IDs from the legacy v2 coverage list.
+# Example: APIFOOTBALL_LEAGUE_IDS='{"BEL": 144, "TUR": 203}'
 try:
     APIFOOTBALL_LEAGUE_IDS = {
         str(code).upper(): int(league_id)
@@ -251,9 +251,28 @@ try:
 except (TypeError, ValueError, json.JSONDecodeError):
     APIFOOTBALL_LEAGUE_IDS = {}
 
+# Resolve these competitions through the authenticated API-Football v3
+# /leagues endpoint instead of hardcoding legacy v2 numeric IDs. Results are
+# cached by the provider adapter; exact country + league-name matching is used.
+APIFOOTBALL_LEAGUE_SEARCH = {
+    "ALG": ("Algeria", "Ligue 1"),
+    "EGY": ("Egypt", "Premier League"),
+    "GHA": ("Ghana", "Premier League"),
+    "KEN": ("Kenya", "FKF Premier League"),
+    "MWI": ("Malawi", "Super League"),
+    "MAR": ("Morocco", "Botola Pro"),
+    "NGA": ("Nigeria", "NPFL"),
+    "RWA": ("Rwanda", "Premier League"),
+    "SEN": ("Senegal", "Ligue 1"),
+    "TZA": ("Tanzania", "Ligi kuu Bara"),
+    "UGA": ("Uganda", "Premier League"),
+    "ZMB": ("Zambia", "Super League"),
+    "ZWE": ("Zimbabwe", "Premier Soccer League"),
+}
+
 # AF leagues that run on a single calendar year (season == year). Everything
 # else is treated as a split (Aug–May) season where season == start year.
-APIFOOTBALL_CALENDAR_YEAR = {"MLS", "LMX"}
+APIFOOTBALL_CALENDAR_YEAR = {"MLS", "LMX", "MWI", "ZWE"}
 
 # Live-Football-Data (FotMob) league IDs for provider "LF". Verified:
 #   536 = Saudi Pro League, 47 = Premier League (example).
