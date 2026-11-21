@@ -248,3 +248,46 @@ class ResultProviderFallbackTests(TestCase):
         matches = fetch_result_matches_by_date("BEL", "2026-11-10")
         self.assertEqual(len(matches), 1)
         self.assertEqual(matches[0]["score"]["fullTime"], {"home": 1, "away": 0})
+
+
+
+class CrossProviderFixtureIdentityTests(TestCase):
+    def test_team_names_with_common_provider_variants_share_identity(self):
+        from predict.fixture_sources import _team_key
+
+        pairs = [
+            ("Manchester United", "Man Utd"),
+            ("Paris Saint-Germain", "PSG"),
+            ("Bayern München", "Bayern Munich"),
+            ("Internazionale", "Inter Milan"),
+            ("Sporting Clube de Portugal", "Sporting CP"),
+            ("Athletic Club", "Athletic Bilbao"),
+        ]
+        for left, right in pairs:
+            with self.subTest(left=left, right=right):
+                self.assertEqual(_team_key(left), _team_key(right))
+
+    def test_fixture_key_normalizes_equivalent_timezone_offsets(self):
+        from predict.fixture_sources import _fixture_key
+
+        utc_fixture = {
+            "utcDate": "2026-11-10T23:30:00Z",
+            "homeTeam": {"name": "Manchester United"},
+            "awayTeam": {"name": "PSG"},
+        }
+        offset_fixture = {
+            "utcDate": "2026-11-11T01:30:00+02:00",
+            "homeTeam": {"name": "Man Utd"},
+            "awayTeam": {"name": "Paris Saint-Germain"},
+        }
+        self.assertEqual(_fixture_key(utc_fixture), _fixture_key(offset_fixture))
+
+    def test_fixture_key_rejects_invalid_kickoff(self):
+        from predict.fixture_sources import _fixture_key
+
+        fixture = {
+            "utcDate": "not-a-date",
+            "homeTeam": {"name": "Alpha"},
+            "awayTeam": {"name": "Beta"},
+        }
+        self.assertIsNone(_fixture_key(fixture))
