@@ -1,12 +1,10 @@
 """Conservative public-source probe for potential African fixture sources.
 
-This audit is diagnostic-only: it never saves fixtures or generates predictions.
-It fetches robots.txt first and does not probe a page if robots rules disallow
-the audit command's user-agent. Source terms should be reviewed separately.
+Diagnostic-only: no fixture persistence or prediction generation. Fetch robots.txt
+first and fail closed. Source terms should be reviewed separately.
 """
 import json
 import re
-from urllib.parse import urljoin
 from urllib.robotparser import RobotFileParser
 
 import requests
@@ -14,12 +12,21 @@ from django.core.management.base import BaseCommand
 
 SOURCES = {
     "NGA": {
-        "name": "NPFL official documents",
-        "url": "https://npfl.com.ng/npfl-documents/",
+        "name": "NPFL fixtures and results",
+        "url": "https://npfl.com.ng/fixtures-results/",
         "robots_url": "https://npfl.com.ng/robots.txt",
+    },
+    "KEN": {
+        "name": "RSSSF Kenya Premier League 2026/27",
+        "url": "https://www.rsssf.org/tablesk/kenya2027.html",
+        "robots_url": "https://www.rsssf.org/robots.txt",
     },
 }
 USER_AGENT = "IXTipsSourceAudit/1.0 (+fixture-source diagnostic)"
+JSONLD_RE = re.compile(
+    r'<script\b[^>]*\btype\s*=\s*["\']application/ld\+json["\'][^>]*>(.*?)</script\s*>',
+    re.I | re.S,
+)
 
 
 class Command(BaseCommand):
@@ -55,8 +62,8 @@ class Command(BaseCommand):
                 if not response.ok:
                     continue
                 html = response.text[:2_000_000]
-                jsonld = re.findall(r'<script[^>]+type=["\\']application/ld\\+json["\\'][^>]*>(.*?)</script>', html, re.I | re.S)
-                self.stdout.write(f"  jsonld_blocks={len(jsonld)}; html_bytes={len(response.text)}")
+                jsonld = JSONLD_RE.findall(html)
+                self.stdout.write(f"  jsonld_blocks={len(jsonld)}; html_bytes={len(response.text)}; scan_limit_bytes=2000000")
                 for index, block in enumerate(jsonld[:5], 1):
                     try:
                         parsed = json.loads(block.strip())
