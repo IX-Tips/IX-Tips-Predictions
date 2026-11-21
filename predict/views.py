@@ -249,7 +249,7 @@ def normalize_team_lookup_key(name):
 def fetch_matches_for_status_refresh(competition_code, match_date):
     # Query every enabled, mapped result-capable feed. Some fixture providers
     # publish no live events but do publish completed scores later.
-    from .fixture_sources import fetch_result_matches_by_date, _team_key
+    from .fixture_sources import fetch_result_matches_by_date
     return fetch_result_matches_by_date(competition_code, match_date)
 
 
@@ -264,6 +264,8 @@ def normalize_api_match_status(api_status):
 
 
 def refresh_prediction_statuses(competition_code, match_date, force=False):
+    from .fixture_sources import _team_key
+
     match_date_str = match_date.isoformat() if isinstance(match_date, date) else str(match_date)
     if not competition_code or not match_date_str:
         return 0
