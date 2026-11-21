@@ -90,6 +90,19 @@ class ProviderDiagnosticsTests(TestCase):
         self.assertFalse(configured)
         self.assertEqual(label, "LIVEFOOTBALL_KEY")
 
+    @patch("predict.openfootball._latest_available_season_year", return_value=2025)
+    @patch("predict.openfootball.current_season_year", return_value=2026)
+    @patch("predict.fixture_sources.record_provider_diagnostic")
+    @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
+    @patch("predict.fixture_sources._provider_order", return_value=["OF"])
+    @patch("predict.fixture_sources._dispatch_explicit_provider", return_value=[])
+    def test_openfootball_diagnostic_explains_missing_current_season(
+        self, dispatch, provider_order, configuration, record, current_year, latest_year
+    ):
+        fetch_fixture_matches_by_date(None, "KEN", "2026-11-21")
+        self.assertEqual(record.call_args.args[2], "empty_response")
+        self.assertIn("latest published season starts 2025", record.call_args.kwargs["error"])
+
 
 
 class BulkFixtureDiscoveryTests(TestCase):
