@@ -14,6 +14,8 @@ import logging
 import os
 import re
 import time
+import unicodedata
+from datetime import datetime, timezone as datetime_timezone
 
 from django.core.cache import cache
 from django.utils import timezone
@@ -235,21 +237,37 @@ def _provider_order(competition_code):
 
 
 def _team_key(value):
-    value = (value or "").casefold().replace("&", " and ")
-    value = re.sub(r"\b(fc|cf|ac|sc|afc|club|de|da|del)\b", " ", value)
+    value = unicodedata.normalize("NFKD", (value or "").casefold())
+    value = "".join(char for char in value if not unicodedata.combining(char))
+    value = value.replace("ß", "ss").replace("&", " and ")
+    value = re.sub(r"\b(fc|cf|ac|sc|afc|club|de|da|del|ssc|fk|sk|sv|cd|ud)\b", " ", value)
     value = re.sub(r"[^a-z0-9]+", " ", value)
     value = " ".join(value.split())
     aliases = {
         "man city": "manchester city",
         "man utd": "manchester united",
+        "manchester utd": "manchester united",
         "brighton and hove albion": "brighton",
         "brighton hove albion": "brighton",
         "spurs": "tottenham",
         "tottenham hotspur": "tottenham",
         "celta vigo": "celta",
         "athletic bilbao": "athletic",
+        "athletic club": "athletic",
         "barca": "barcelona",
         "atleti": "atletico madrid",
+        "atletico": "atletico madrid",
+        "inter": "inter milan",
+        "internazionale": "inter milan",
+        "fc internazionale": "inter milan",
+        "psg": "paris saint germain",
+        "paris sg": "paris saint germain",
+        "paris saint germain": "paris saint germain",
+        "bayern munchen": "bayern munich",
+        "bayern": "bayern munich",
+        "real betis": "betis",
+        "sporting lisbon": "sporting cp",
+        "sporting clube de portugal": "sporting cp",
     }
     return aliases.get(value, value)
 
@@ -257,11 +275,23 @@ def _team_key(value):
 def _fixture_key(match):
     home = (match.get("homeTeam") or {}).get("name")
     away = (match.get("awayTeam") or {}).get("name")
-    match_day = (match.get("utcDate") or "")[:10]
-    if not home or not away or not match_day:
+    raw_kickoff = match.get("utcDate") or ""
+    if not home or not away or not raw_kickoff:
         return None
-    # Provider feeds may express the same kickoff in different time zones.
-    # A team pair can only meet once in a competition on a given match day.
+
+    # Different feeds can encode the same kickoff with different UTC offsets.
+    # Convert offset-aware timestamps to a common UTC calendar date before
+    # comparing fixtures; retain the source date for date-only/naive values.
+    match_day = raw_kickoff[:10]
+    try:
+        kickoff = datetime.fromisoformat(raw_kickoff.replace("Z", "+00:00"))
+        if kickoff.tzinfo is not None:
+            match_day = kickoff.astimezone(datetime_timezone.utc).date().isoformat()
+        else:
+            match_day = kickoff.date().isoformat()
+    except (TypeError, ValueError):
+        return None
+
     return match_day, _team_key(home), _team_key(away)
 
 
