@@ -49,6 +49,12 @@ class Command(BaseCommand):
             season = af_season(code, date.today())
             self.stdout.write(f"\n{code} | {COMPETITIONS[code]} | season={season}")
 
+            # Force a fresh league lookup so the live audit does not report a
+            # stale cached ID as proof that the provider currently resolves it.
+            try:
+                cache.delete(f"af_league_id_v3::{code}::{season}")
+            except Exception:
+                pass
             league_id = af_league_id(code, season)
             lookup_health = self._health("leagues")
             if not league_id:
