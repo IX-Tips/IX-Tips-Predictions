@@ -144,27 +144,46 @@ def dispatch_provider(competition_code, operation, *args, **kwargs):
 
 # ── Low-level request ─────────────────────────────────────────────────────────
 
+def _record_af_request_health(state):
+    """Best-effort API-Football health state; diagnostics never break ingestion."""
+    try:
+        cache.set(f"provider_request_health::AF::{state.get('endpoint', 'unknown')}", state, timeout=60 * 60 * 24)
+    except Exception as exc:
+        logger.warning("Unable to cache API-Football diagnostics: %s", exc)
+
+
 def _af_get(path, params=None):
     """Call API-Football and return the `response` list (handles paging)."""
     if not AF_KEY:
-        logger.info("APIFOOTBALL_KEY not set; skipping API-Football call %s", path)
+        logger.info("API-Football key not set; skipping API-Football call %s", path)
+        _record_af_request_health({
+            "status": "not_configured",
+            "last_error": "API-Football key is not configured",
+            "checked_at": timezone.now().isoformat(),
+            "endpoint": path,
+        })
         return []
 
     headers = {"x-apisports-key": AF_KEY}
     params = dict(params or {})
     results = []
     page = 1
+    request_error = None
     while True:
         params["page"] = page
         try:
             r = requests.get(f"{AF_BASE_URL}/{path}", headers=headers, params=params, timeout=15)
             r.raise_for_status()
             data = r.json()
+            if not isinstance(data, dict):
+                raise ValueError("API-Football returned an invalid response payload")
         except Exception as exc:
+            request_error = str(exc)[:500]
             logger.warning("API-Football request failed: %s params=%s error=%s", path, params, exc)
             break
 
         if data.get("errors"):
+            request_error = str(data["errors"])[:500]
             logger.warning("API-Football returned errors for %s: %s", path, data["errors"])
             break
 
@@ -173,6 +192,13 @@ def _af_get(path, params=None):
         if page >= (paging.get("total") or 1):
             break
         page += 1
+
+    _record_af_request_health({
+        "status": "error" if request_error else "ok",
+        "last_error": request_error,
+        "checked_at": timezone.now().isoformat(),
+        "endpoint": path,
+    })
     return results
 
 

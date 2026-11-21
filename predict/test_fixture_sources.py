@@ -1,5 +1,7 @@
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+
+from django.utils import timezone
 
 from predict.fixture_sources import fetch_fixture_matches_by_date
 
@@ -62,6 +64,64 @@ class FixtureAggregationTests(TestCase):
 
 
 class ProviderDiagnosticsTests(TestCase):
+    @patch("predict.providers.AF_KEY", "configured-test-key")
+    @patch("predict.providers.cache.set")
+    @patch("predict.providers.requests.get")
+    def test_af_get_records_api_errors_in_provider_health(self, get, cache_set):
+        response = Mock()
+        response.json.return_value = {
+            "errors": {"token": "Invalid API key"},
+            "response": [],
+        }
+        get.return_value = response
+
+        from predict.providers import _af_get
+        self.assertEqual(_af_get("fixtures", {"league": 123, "season": 2026}), [])
+
+        health_writes = [
+            call for call in cache_set.call_args_list
+            if call.args[0] == "provider_request_health::AF::fixtures"
+        ]
+        self.assertEqual(len(health_writes), 1)
+        self.assertEqual(health_writes[0].args[1]["status"], "error")
+        self.assertIn("Invalid API key", health_writes[0].args[1]["last_error"])
+
+    @patch("predict.providers.AF_KEY", "configured-test-key")
+    @patch("predict.providers.cache.set")
+    @patch("predict.providers.requests.get")
+    def test_af_get_records_successful_empty_response_as_healthy(self, get, cache_set):
+        response = Mock()
+        response.json.return_value = {"errors": [], "response": [], "paging": {"total": 1, "current": 1}}
+        get.return_value = response
+
+        from predict.providers import _af_get
+        self.assertEqual(_af_get("fixtures", {"league": 123, "season": 2026}), [])
+
+        health = next(
+            call.args[1] for call in cache_set.call_args_list
+            if call.args[0] == "provider_request_health::AF::fixtures"
+        )
+        self.assertEqual(health["status"], "ok")
+        self.assertIsNone(health["last_error"])
+
+    @patch("predict.fixture_sources._diagnostic_cache_get", return_value={
+        "status": "error",
+        "last_error": "Invalid API key",
+        "checked_at": timezone.now().isoformat(),
+        "endpoint": "fixtures",
+    })
+    @patch("predict.fixture_sources.record_provider_diagnostic")
+    @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
+    @patch("predict.fixture_sources._provider_order", return_value=["AF"])
+    @patch("predict.fixture_sources._dispatch_explicit_provider", return_value=[])
+    def test_recent_api_football_request_error_is_not_reported_as_empty_response(
+        self, dispatch, provider_order, configuration, record, health
+    ):
+        fetch_fixture_matches_by_date(None, "KEN", "2026-11-21")
+
+        self.assertEqual(record.call_args.args[2], "error")
+        self.assertEqual(record.call_args.kwargs["error"], "Invalid API key")
+
     @patch("predict.providers.APIFOOTBALL_API_KEY", "django-setting-key")
     @patch.dict("os.environ", {"APIFOOTBALL_KEY": ""}, clear=False)
     def test_api_football_key_accepts_django_setting_name(self):
