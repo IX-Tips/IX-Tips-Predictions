@@ -24,7 +24,7 @@ from .providers import (
     dispatch_provider, get_provider, AF_KEY, LF_KEY, API_TOKEN,
     supports_open_matchday, supports_openfootball, LIVEFOOTBALL_LEAGUE_IDS,
 )
-from .constants import APIFOOTBALL_LEAGUE_IDS
+from .constants import APIFOOTBALL_LEAGUE_IDS, APIFOOTBALL_LEAGUE_SEARCH
 
 logger = logging.getLogger(__name__)
 
@@ -242,7 +242,7 @@ def _provider_order(competition_code):
 
     # API-Football is an independent fallback only when both its key and
     # competition league ID are configured. It never replaces the primary.
-    if AF_KEY and competition_code in APIFOOTBALL_LEAGUE_IDS and "AF" not in providers:
+    if AF_KEY and (competition_code in APIFOOTBALL_LEAGUE_IDS or competition_code in APIFOOTBALL_LEAGUE_SEARCH) and "AF" not in providers:
         providers.append("AF")
     # The public open-matchday feed is last so existing provider data wins.
     if supports_open_matchday(competition_code) and "OM" not in providers:
