@@ -500,10 +500,29 @@ def fetch_fixture_matches_by_date(api_key, competition_code, match_date):
                 match_date=match_date,
             )
         else:
+            diagnostic_error = None
+            if provider == "OF" and not valid_count:
+                # OpenFootball often has useful historical seasons but does
+                # not publish the current African season. Explain that gap
+                # instead of making an empty current-season file look like a
+                # transient fixture-fetch failure.
+                try:
+                    from .openfootball import current_season_year, _latest_available_season_year
+                    requested_season = current_season_year(competition_code)
+                    latest_season = _latest_available_season_year(competition_code)
+                    if latest_season is None:
+                        diagnostic_error = "No season file is published for this competition."
+                    elif latest_season < requested_season:
+                        diagnostic_error = (
+                            f"No OpenFootball file for current season {requested_season}; "
+                            f"latest published season starts {latest_season}."
+                        )
+                except Exception as exc:
+                    logger.debug("Could not inspect OpenFootball season coverage for %s: %s", competition_code, exc)
             record_provider_diagnostic(
                 competition_code, provider,
                 "fixtures_found" if valid_count else "empty_response",
-                fixture_count=valid_count, match_date=match_date,
+                fixture_count=valid_count, error=diagnostic_error, match_date=match_date,
             )
 
         for match in matches or []:
