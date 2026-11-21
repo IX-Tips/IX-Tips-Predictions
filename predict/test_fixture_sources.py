@@ -62,6 +62,20 @@ class FixtureAggregationTests(TestCase):
 
 
 class ProviderDiagnosticsTests(TestCase):
+    @patch("predict.providers.APIFOOTBALL_API_KEY", "django-setting-key")
+    @patch.dict("os.environ", {"APIFOOTBALL_KEY": ""}, clear=False)
+    def test_api_football_key_accepts_django_setting_name(self):
+        from predict.providers import _configured_api_football_key
+
+        self.assertEqual(_configured_api_football_key(), "django-setting-key")
+
+    @patch("predict.providers.APIFOOTBALL_API_KEY", "django-setting-key")
+    @patch.dict("os.environ", {"APIFOOTBALL_KEY": "legacy-env-key"}, clear=False)
+    def test_legacy_api_football_key_env_alias_takes_precedence(self):
+        from predict.providers import _configured_api_football_key
+
+        self.assertEqual(_configured_api_football_key(), "legacy-env-key")
+
     @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
     @patch("predict.fixture_sources.record_provider_diagnostic")
     @patch("predict.fixture_sources._provider_order", return_value=["LF"])

@@ -22,6 +22,7 @@ from django.utils import timezone
 
 from .constants import (
     API_TOKEN,
+    APIFOOTBALL_API_KEY,
     BASE_URL,
     APIFOOTBALL_CALENDAR_YEAR,
     APIFOOTBALL_LEAGUE_IDS,
@@ -36,7 +37,14 @@ from .constants import (
 logger = logging.getLogger(__name__)
 
 AF_BASE_URL = os.environ.get("APIFOOTBALL_BASE_URL", "https://v3.football.api-sports.io")
-AF_KEY = os.environ.get("APIFOOTBALL_KEY", "")
+
+
+def _configured_api_football_key():
+    """Support the documented Django setting/env name and the legacy env alias."""
+    return os.environ.get("APIFOOTBALL_KEY") or APIFOOTBALL_API_KEY
+
+
+AF_KEY = _configured_api_football_key()
 
 # Live-Football-Data (FotMob) on RapidAPI
 LF_HOST = os.environ.get("LIVEFOOTBALL_HOST", "free-api-live-football-data.p.rapidapi.com")
