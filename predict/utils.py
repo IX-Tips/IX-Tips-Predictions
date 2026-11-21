@@ -1094,6 +1094,10 @@ def _lookup_normalized_team_value(mapping, team_name, default=None):
     direct = mapping.get(team_name)
     if direct is not None:
         return direct
+    # Fast path for maps already indexed by normalized team identity.
+    direct = mapping.get(target)
+    if direct is not None:
+        return direct
     for stored_name, value in mapping.items():
         if _normalize_team_lookup_value(stored_name) == target:
             return value
@@ -1647,6 +1651,20 @@ def build_fixture_features(home_team, away_team, model_context):
         # repeatedly rebuild them for each prediction.
         team_profiles = team_profiles or {}
         h2h_profiles = h2h_profiles or {}
+
+    # Index team profiles by normalized identity once per reusable context.
+    # Older contexts may retain provider display names, which otherwise force
+    # a linear scan for both teams on every fixture.
+    if isinstance(model_context, dict) and team_profiles:
+        normalized_team_profiles = model_context.get("_normalized_team_profiles")
+        if normalized_team_profiles is None:
+            normalized_team_profiles = {}
+            for name, profile in team_profiles.items():
+                normalized_name = _normalize_team_lookup_value(name)
+                if normalized_name:
+                    normalized_team_profiles.setdefault(normalized_name, profile)
+            model_context["_normalized_team_profiles"] = normalized_team_profiles
+        team_profiles = normalized_team_profiles
 
     # Convert legacy/provider-display H2H keys to normalized pair keys once
     # per reusable context. This prevents _build_feature_row from scanning
