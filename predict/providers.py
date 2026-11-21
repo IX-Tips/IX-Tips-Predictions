@@ -147,7 +147,7 @@ def dispatch_provider(competition_code, operation, *args, **kwargs):
 def _record_af_request_health(state):
     """Best-effort API-Football health state; diagnostics never break ingestion."""
     try:
-        cache.set("provider_request_health::AF", state, timeout=60 * 60 * 24)
+        cache.set(f"provider_request_health::AF::{state.get('endpoint', 'unknown')}", state, timeout=60 * 60 * 24)
     except Exception as exc:
         logger.warning("Unable to cache API-Football diagnostics: %s", exc)
 
