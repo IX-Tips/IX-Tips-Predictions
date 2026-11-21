@@ -167,3 +167,32 @@ class PredictionFeatureCoverageTests(SimpleTestCase):
 
         self.assertEqual(_estimate_goal_rate_bias([2.0] * 10, [1.0] * 10), 0.0)
         self.assertEqual(_estimate_goal_rate_bias([3.0] * 20, [1.0] * 20), 0.35)
+
+    def test_legacy_h2h_index_is_cached_and_normalized(self):
+        from .utils import build_fixture_features
+
+        history = pd.DataFrame([{
+            "home_team": "Alpha FC", "away_team": "Beta FC",
+            "home_goals": 1, "away_goals": 0,
+            "utc_date": pd.Timestamp("2025-01-01T15:00:00Z"),
+        }])
+        context = {
+            "history": history,
+            "lookback": 8,
+            "feature_columns": None,
+            "league_home_goals": 1.4,
+            "league_away_goals": 1.1,
+            "team_profiles": {},
+            "h2h_profiles": {
+                ("Alpha FC", "Beta FC"): [{
+                    "home_team": "alpha", "away_team": "beta",
+                    "home_goals": 1, "away_goals": 0,
+                }],
+            },
+            "elo_ratings": {},
+        }
+        build_fixture_features("Alpha FC", "Beta FC", context)
+        cached_index = context["_normalized_h2h_profiles"]
+        build_fixture_features("Beta FC", "Alpha FC", context)
+        self.assertIs(context["_normalized_h2h_profiles"], cached_index)
+        self.assertIn(("alpha", "beta"), cached_index)
