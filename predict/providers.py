@@ -25,6 +25,7 @@ from .constants import (
     BASE_URL,
     APIFOOTBALL_CALENDAR_YEAR,
     APIFOOTBALL_LEAGUE_IDS,
+    APIFOOTBALL_LEAGUE_SEARCH,
     COMPETITION_PROVIDERS,
     FOOTBALL_DATA_UK_CODES,
     LIVEFOOTBALL_LEAGUE_IDS,
@@ -187,6 +188,55 @@ def af_season(competition_code, d):
     return _af_season_for_split_year(d)
 
 
+def af_league_id(competition_code, season_year=None):
+    """Resolve a v3 league ID, preferring an explicit account-verified override."""
+    code = str(competition_code or "").upper()
+    configured_id = APIFOOTBALL_LEAGUE_IDS.get(code)
+    if configured_id:
+        return configured_id
+
+    lookup = APIFOOTBALL_LEAGUE_SEARCH.get(code)
+    if not lookup:
+        return None
+
+    country, league_name = lookup
+    cache_key = f"af_league_id_v3::{code}::{season_year or 'current'}"
+    try:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached or None
+    except Exception:
+        pass
+
+    params = {"search": league_name, "country": country}
+    if season_year:
+        params["season"] = int(season_year)
+    rows = _af_get("leagues", params)
+    expected_country = country.casefold()
+    expected_name = " ".join(league_name.casefold().split())
+    league_id = None
+    for row in rows:
+        league = row.get("league", {}) or {}
+        country_data = row.get("country", {}) or {}
+        actual_country = str(country_data.get("name") or "").casefold()
+        actual_name = " ".join(str(league.get("name") or "").casefold().split())
+        candidate_id = league.get("id")
+        if actual_country == expected_country and actual_name == expected_name and candidate_id:
+            league_id = int(candidate_id)
+            break
+
+    try:
+        cache.set(cache_key, league_id or 0, timeout=60 * 60 * 24)
+    except Exception:
+        pass
+    if not league_id:
+        logger.info(
+            "API-Football v3 league lookup found no exact match for %s (%s, %s, season %s)",
+            code, country, league_name, season_year,
+        )
+    return league_id
+
+
 # ── Normalisation (API-Football -> football-data shape) ───────────────────────
 
 def _af_status(short):
@@ -230,7 +280,7 @@ def _normalize_fixture(fx):
 
 def _af_fetch_season_matches(competition_code, season_year):
     """Fetch and cache the season once; date scans then avoid one API call/day."""
-    league_id = APIFOOTBALL_LEAGUE_IDS.get(competition_code)
+    league_id = af_league_id(competition_code, season_year)
     if not league_id:
         return []
     cache_key = f"af_season_fixtures::{competition_code}::{season_year}"
