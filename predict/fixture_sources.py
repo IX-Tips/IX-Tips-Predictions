@@ -375,7 +375,11 @@ def fetch_upcoming_fixture_groups(api_key, competition_code, days_ahead=45):
     season_matches = []
 
     try:
-        if supports_open_matchday(competition_code):
+        # Bulk discovery must respect the configured primary source. A
+        # secondary season feed is not allowed to add another set of dates
+        # when the primary already has coverage; per-date fallback below is
+        # reserved for dates where the primary has no usable fixtures.
+        if primary == "OM" and supports_open_matchday(competition_code):
             bulk_provider = "OM"
             season_matches = providers._om_current_matches(competition_code)
         elif primary == "UK" and competition_code in providers.FOOTBALL_DATA_UK_CODES:
@@ -509,6 +513,12 @@ def fetch_fixture_matches_by_date(api_key, competition_code, match_date):
             existing = merged.get(key)
             if existing is None or (_has_result(match) and not _has_result(existing)):
                 merged[key] = match
+
+        # Provider order is a fallback chain, not an aggregation list. Once
+        # the current source supplies any valid fixture for this date, stop:
+        # this avoids duplicate requests and conflicting provider snapshots.
+        if valid_count:
+            break
 
     return sorted(
         merged.values(),
