@@ -15,7 +15,7 @@ import os
 import re
 import time
 import unicodedata
-from datetime import datetime, timezone as datetime_timezone
+from datetime import date, datetime, timezone as datetime_timezone
 
 from django.core.cache import cache
 from django.utils import timezone
@@ -191,7 +191,7 @@ def fetch_result_matches_by_date(competition_code, match_date):
 
         result_count = 0
         for match in matches:
-            key = _fixture_key(match)
+            key = _matching_fixture_key(merged, match)
             if key is None:
                 continue
             has_result = _has_result(match)
@@ -295,6 +295,33 @@ def _fixture_key(match):
         return None
 
     return match_day, _team_key(home), _team_key(away)
+
+
+def _matching_fixture_key(merged, match):
+    """Find an unambiguous same-team fixture when providers differ by one date."""
+    key = _fixture_key(match)
+    if key is None or key in merged:
+        return key
+
+    try:
+        match_day = date.fromisoformat(key[0])
+    except (TypeError, ValueError):
+        return key
+
+    nearby = []
+    for candidate in merged:
+        if candidate[1:] != key[1:]:
+            continue
+        try:
+            candidate_day = date.fromisoformat(candidate[0])
+        except (TypeError, ValueError):
+            continue
+        if abs((candidate_day - match_day).days) <= 1:
+            nearby.append(candidate)
+
+    # If more than one possible match exists, keep it separate rather than
+    # risking a result being attached to the wrong fixture.
+    return nearby[0] if len(nearby) == 1 else key
 
 
 def _has_result(match):
@@ -462,7 +489,7 @@ def fetch_fixture_matches_by_date(api_key, competition_code, match_date):
             )
 
         for match in matches or []:
-            key = _fixture_key(match)
+            key = _matching_fixture_key(merged, match)
             if key is None:
                 continue
             existing = merged.get(key)
