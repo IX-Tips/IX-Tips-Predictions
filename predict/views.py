@@ -247,9 +247,10 @@ def normalize_team_lookup_key(name):
 
 
 def fetch_matches_for_status_refresh(competition_code, match_date):
-    # Merge primary and Open Matchday results for reliable status refresh.
-    from .fixture_sources import fetch_fixture_matches_by_date
-    return fetch_fixture_matches_by_date(None, competition_code, match_date)
+    # Query every enabled, mapped result-capable feed. Some fixture providers
+    # publish no live events but do publish completed scores later.
+    from .fixture_sources import fetch_result_matches_by_date
+    return fetch_result_matches_by_date(competition_code, match_date)
 
 
 def normalize_api_match_status(api_status):
