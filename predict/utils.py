@@ -1648,6 +1648,23 @@ def build_fixture_features(home_team, away_team, model_context):
         team_profiles = team_profiles or {}
         h2h_profiles = h2h_profiles or {}
 
+    # Convert legacy/provider-display H2H keys to normalized pair keys once
+    # per reusable context. This prevents _build_feature_row from scanning
+    # the entire legacy H2H mapping for every fixture.
+    if isinstance(model_context, dict) and h2h_profiles:
+        normalized_h2h = model_context.get("_normalized_h2h_profiles")
+        if normalized_h2h is None:
+            normalized_h2h = {}
+            for pair, matches in h2h_profiles.items():
+                if len(pair) != 2:
+                    continue
+                normalized_pair = tuple(sorted(
+                    _normalize_team_lookup_value(name) for name in pair
+                ))
+                normalized_h2h.setdefault(normalized_pair, []).extend(matches or [])
+            model_context["_normalized_h2h_profiles"] = normalized_h2h
+        h2h_profiles = normalized_h2h
+
     current_date = None
     if "utc_date" in history.columns and not history["utc_date"].isna().all():
         current_date = history["utc_date"].max()
