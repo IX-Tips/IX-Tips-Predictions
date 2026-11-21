@@ -7,6 +7,8 @@ import json
 import re
 from urllib.robotparser import RobotFileParser
 
+from predict.rsssf_audit_parser import extract_rsssf_text, parse_rsssf_text
+
 import requests
 from django.core.management.base import BaseCommand
 
@@ -71,6 +73,30 @@ class Command(BaseCommand):
                         self.stdout.write(f"  jsonld_{index}_type={types}")
                     except (ValueError, TypeError):
                         self.stdout.write(f"  jsonld_{index}=unparseable")
+                if code == "KEN":
+                    extracted_text = extract_rsssf_text(html)
+                    parsed_fixtures = parse_rsssf_text(
+                        extracted_text, season_year=2026, season_start_month=7
+                    )
+                    fixtures = parsed_fixtures["fixtures"]
+                    completed = sum(item["status"] == "finished" for item in fixtures)
+                    scheduled = sum(item["status"] == "scheduled" for item in fixtures)
+                    self.stdout.write(
+                        f"  rsssf_lines={parsed_fixtures['lines_scanned']}; "
+                        f"fixtures_parsed={len(fixtures)}; completed={completed}; "
+                        f"scheduled={scheduled}; skipped={len(parsed_fixtures['skipped'])}"
+                    )
+                    for fixture in fixtures[:10]:
+                        score = fixture["score"]
+                        score_text = f"{score[0]}-{score[1]}" if score else "vs"
+                        self.stdout.write(
+                            f"  fixture={fixture['date']} | {fixture['home']} "
+                            f"{score_text} {fixture['away']} | {fixture['status']}"
+                        )
+                    self.stdout.write(
+                        "  NOTE: extracted rows are diagnostic only; no fixtures or "
+                        "predictions are saved."
+                    )
                 self.stdout.write("  NOTE: status/structured-data hints are not fixture validation.")
             except Exception as exc:
                 self.stdout.write(f"  PAGE_FETCH_ERROR: {str(exc)[:300]}")
