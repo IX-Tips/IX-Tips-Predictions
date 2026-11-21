@@ -490,3 +490,29 @@ class CrossProviderFixtureIdentityTests(TestCase):
 
         self.assertEqual(len(matches), 1)
         self.assertEqual(matches[0]["score"]["fullTime"], {"home": 3, "away": 1})
+
+
+class AfricanLeagueLookupValidationTests(TestCase):
+    @patch("predict.providers.cache.set")
+    @patch("predict.providers.cache.get", return_value=None)
+    @patch("predict.providers._af_get", return_value=[
+        {"league": {"id": "bad-id", "name": "FKF Premier League"}, "country": {"name": "Kenya"}},
+        {"league": {"id": -5, "name": "FKF Premier League"}, "country": {"name": "Kenya"}},
+        {"league": {"id": 321, "name": "FKF Premier League"}, "country": {"name": "Kenya"}},
+    ])
+    @patch("predict.providers.APIFOOTBALL_LEAGUE_SEARCH", {"KEN": ("Kenya", "FKF Premier League")})
+    def test_ignores_invalid_ids_and_uses_valid_exact_match(self, lookup, cache_get, cache_set):
+        from predict.providers import af_league_id
+        self.assertEqual(af_league_id("KEN", 2026), 321)
+
+    @patch("predict.providers.cache.set")
+    @patch("predict.providers.cache.get", return_value=None)
+    @patch("predict.providers._af_get", return_value=[
+        {"league": "unexpected-shape"},
+        {"league": {"id": 321, "name": "FKF Premier League"}, "country": None},
+        {"league": {"id": 0, "name": "FKF Premier League"}, "country": {"name": "Kenya"}},
+    ])
+    @patch("predict.providers.APIFOOTBALL_LEAGUE_SEARCH", {"KEN": ("Kenya", "FKF Premier League")})
+    def test_malformed_lookup_rows_do_not_raise_or_accept_invalid_ids(self, lookup, cache_get, cache_set):
+        from predict.providers import af_league_id
+        self.assertIsNone(af_league_id("KEN", 2026))
