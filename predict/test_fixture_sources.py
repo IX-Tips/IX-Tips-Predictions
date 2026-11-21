@@ -222,7 +222,9 @@ class ResultProviderFallbackTests(TestCase):
         }
         dispatch.side_effect = [[self.fixture], [completed]]
         from predict.fixture_sources import fetch_result_matches_by_date
-        matches = fetch_result_matches_by_date("BEL", "2026-11-10")
+        matches = fetch_result_matches_by_date(
+            "BEL", "2026-11-10", target_pairs={("alpha", "beta")},
+        )
         self.assertEqual(len(matches), 1)
         self.assertEqual(matches[0]["score"]["fullTime"], {"home": 2, "away": 1})
         self.assertEqual(matches[0]["status"], "FINISHED")
@@ -247,6 +249,27 @@ class ResultProviderFallbackTests(TestCase):
         from predict.fixture_sources import fetch_result_matches_by_date
         matches = fetch_result_matches_by_date("BEL", "2026-11-10")
         self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["score"]["fullTime"], {"home": 1, "away": 0})
+
+
+    @patch("predict.fixture_sources._result_provider_order", return_value=["FD", "OM"])
+    @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
+    @patch("predict.fixture_sources._dispatch_explicit_provider")
+    @patch("predict.fixture_sources.record_result_provider_diagnostic")
+    def test_skips_fallback_when_primary_resolves_every_target(
+        self, record, dispatch, configuration, provider_order
+    ):
+        completed = {
+            **self.fixture, "status": "FINISHED",
+            "score": {"fullTime": {"home": 1, "away": 0}},
+        }
+        dispatch.return_value = [completed]
+        from predict.fixture_sources import fetch_result_matches_by_date
+        matches = fetch_result_matches_by_date(
+            "BEL", "2026-11-10", target_pairs={("alpha", "beta")},
+        )
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(dispatch.call_count, 1)
         self.assertEqual(matches[0]["score"]["fullTime"], {"home": 1, "away": 0})
 
 
