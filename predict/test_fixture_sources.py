@@ -154,7 +154,7 @@ class BulkFixtureDiscoveryTests(TestCase):
         grouped = fetch_upcoming_fixture_groups(None, "EFLCUP", days_ahead=45)
 
         self.assertEqual(list(grouped), [sixth_day.isoformat()])
-        fetch_by_date.assert_called_once_with(None, "TUR", sixth_day.isoformat())
+        fetch_by_date.assert_called_once_with(None, "EFLCUP", sixth_day.isoformat())
 
     @patch("predict.fixture_sources.fetch_fixture_matches_by_date")
     @patch("predict.providers._om_current_matches")
