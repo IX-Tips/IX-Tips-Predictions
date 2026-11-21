@@ -3,7 +3,7 @@ import re
 from datetime import date
 
 NUMERIC_DATE_RE = re.compile(
-    r"^\s*(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?\s*(.*)$"
+    r"^\s*(\d{1,2})[./-](\d{1,2})(?:[./-]\s*(\d{2,4}))?\s*(.*)$"
 )
 BRACKET_DATE_RE = re.compile(
     r"^\s*\[([A-Za-z]{3,9})\s+(\d{1,2})(?:,\s*(\d{4}))?\]\s*(.*)$"
@@ -15,6 +15,7 @@ SCORE_RE = re.compile(
     r"^\s*(?P<home>.+?)\s+(?P<home_goals>\d{1,2})\s*[-:]\s*"
     r"(?P<away_goals>\d{1,2})\s+(?P<away>.+?)\s*$"
 )
+SCHEDULED_RE = re.compile(r"^\s*(?P<home>.+?)\s+[-–—]\s+(?P<away>.+?)\s*$")
 MONTHS = {
     name.casefold(): number
     for number, names in enumerate(
@@ -41,7 +42,7 @@ def _make_date(day_text, month_text, year_text, season_year, season_start_month)
 
 
 def parse_rsssf_text(text, season_year=2026, season_start_month=7):
-    """Parse dated RSSSF round/date blocks and score-bearing fixture rows.
+    """Parse RSSSF round/date blocks and dated fixture rows.
 
     Supports numeric dates on their own line or before a fixture, and RSSSF
     month-name date headers such as [Oct 10] followed by one fixture per line.
@@ -92,15 +93,15 @@ def parse_rsssf_text(text, season_year=2026, season_start_month=7):
             current_date = None
             continue
 
-        # A date header may have no fixture on the same line. Keep it active
-        # for following rows until the next date, round, or TBA marker.
         if not remainder:
             continue
         if current_date is None:
             continue
 
         score_match = SCORE_RE.match(remainder)
-        if not score_match:
+        scheduled_match = None if score_match else SCHEDULED_RE.match(remainder)
+        match = score_match or scheduled_match
+        if not match:
             if re.search(r"\s\d{1,2}\s*[-:]\s*\d{1,2}\s", remainder):
                 skipped.append({
                     "line": line_number, "reason": "ambiguous_fixture",
@@ -108,25 +109,26 @@ def parse_rsssf_text(text, season_year=2026, season_start_month=7):
                 })
             continue
 
-        home = score_match.group("home").strip()
-        away = score_match.group("away").strip()
+        home = match.group("home").strip()
+        away = match.group("away").strip()
         if not home or not away or home.casefold() == away.casefold():
             skipped.append({
                 "line": line_number, "reason": "invalid_teams", "text": line[:240]
             })
             continue
 
+        score = (
+            (int(score_match.group("home_goals")), int(score_match.group("away_goals")))
+            if score_match else None
+        )
         records.append({
             "date": current_date.isoformat(),
             "home": home,
             "away": away,
-            "score": (
-                int(score_match.group("home_goals")),
-                int(score_match.group("away_goals")),
-            ),
+            "score": score,
             "round": round_name,
             "source_line": line_number,
-            "status": "finished",
+            "status": "finished" if score is not None else "scheduled",
         })
 
     unique, seen = [], set()
