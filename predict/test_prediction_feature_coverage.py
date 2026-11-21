@@ -169,7 +169,7 @@ class PredictionFeatureCoverageTests(SimpleTestCase):
                 "away_team": "Beta FC",
                 "home_goals": 2,
                 "away_goals": 1,
-                "utc_date": "2025-01-01T15:00:00Z",
+                "utc_date": pd.Timestamp("2025-01-01T15:00:00Z"),
             },
         ])
         context = {"history": history, "feature_columns": None}
