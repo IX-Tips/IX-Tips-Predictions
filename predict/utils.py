@@ -1631,11 +1631,22 @@ def build_fixture_features(home_team, away_team, model_context):
         )
         return pd.DataFrame([row], columns=feature_columns)
 
-    team_profiles = (model_context or {}).get("team_profiles") or {}
-    h2h_profiles = (model_context or {}).get("h2h_profiles") or {}
-    elo_ratings = (model_context or {}).get("elo_ratings") or {}
-    if not team_profiles or not h2h_profiles:
+    context = model_context if isinstance(model_context, dict) else {}
+    team_profiles = context.get("team_profiles")
+    h2h_profiles = context.get("h2h_profiles")
+    elo_ratings = context.get("elo_ratings") or {}
+    # Lazily construct fallback profiles once per mutable model context. Avoid
+    # rebuilding full history profiles for every fixture in a batch when callers
+    # supply legacy contexts without precomputed profile dictionaries.
+    if team_profiles is None or h2h_profiles is None:
         team_profiles, h2h_profiles = _build_profiles_from_history(history)
+        context["team_profiles"] = team_profiles
+        context["h2h_profiles"] = h2h_profiles
+    elif not team_profiles or not h2h_profiles:
+        # Empty dictionaries are valid (e.g. empty/filtered history); do not
+        # repeatedly rebuild them for each prediction.
+        team_profiles = team_profiles or {}
+        h2h_profiles = h2h_profiles or {}
 
     current_date = None
     if "utc_date" in history.columns and not history["utc_date"].isna().all():
