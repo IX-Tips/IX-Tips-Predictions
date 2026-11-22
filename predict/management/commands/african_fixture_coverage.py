@@ -16,7 +16,7 @@ AFRICAN_CODES = set(OPENFOOTBALL_COMPETITIONS)
 
 def build_report(today=None):
     today = today or date.today()
-    codes = sorted(AFRCODES if (AFRCODES := AFRICAN_CODES) else [])
+    codes = sorted(AFRICAN_CODES)
     counts = dict(
         MatchPrediction.objects.filter(match_date__gte=today)
         .exclude(status__in=("FINISHED", "CANCELLED", "POSTPONED"))
