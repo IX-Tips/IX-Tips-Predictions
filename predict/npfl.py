@@ -100,14 +100,14 @@ def parse_fixture_page(html):
         except ValueError:
             continue
         # Sportspress event cells render both club names separated by "vs".
-        teams = re.split(r"\\s+v(?:s\\.?)?\\s+", event, maxsplit=1, flags=re.IGNORECASE)
+        teams = re.split(r"\s+v(?:s\.?)?\s+", event, maxsplit=1, flags=re.IGNORECASE)
         if len(teams) != 2:
             continue
-        home, away = (re.sub(r"\\s+", " ", name).strip(" -–") for name in teams)
+        home, away = (re.sub(r"\s+", " ", name).strip(" -–") for name in teams)
         if not home or not away:
             continue
 
-        score = re.search(r"(?<!\\d)(\\d{1,2})\\s*[-–]\\s*(\\d{1,2})(?!\\d)", time_result)
+        score = re.search(r"(?<!\d)(\d{1,2})\s*[-–]\s*(\d{1,2})(?!\d)", time_result)
         lowered = time_result.casefold()
         if "postpon" in lowered:
             status, home_goals, away_goals = "POSTPONED", None, None
