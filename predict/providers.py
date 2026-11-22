@@ -107,6 +107,7 @@ _PROVIDER_DISPATCH = {
     "UK": {},
     "OM": {},
     "OF": {},
+    "NPFL": {},
 }
 
 
@@ -1093,6 +1094,29 @@ def of_fetch_scorers(competition_code):
 def of_current_matches(competition_code):
     from .openfootball import current_matches
     return current_matches(competition_code)
+
+
+# ══ Nigeria Professional Football League (NPFL) public fixtures ═══════════════
+def supports_npfl(competition_code):
+    return str(competition_code or "").upper() == "NGA" and os.environ.get(
+        "NPFL_SOURCE_ENABLED", "true"
+    ).strip().lower() in {"1", "true", "yes", "on"}
+
+
+@_register(providers=["NPFL"], operation="fetch_matches_by_date")
+def npfl_fetch_matches_by_date(competition_code, match_date):
+    if not supports_npfl(competition_code):
+        return []
+    from .npfl import fetch_matches_by_date
+    return fetch_matches_by_date(competition_code, match_date)
+
+
+@_register(providers=["NPFL"], operation="fetch_matches_by_season")
+def npfl_fetch_matches_by_season(competition_code, season_year):
+    if not supports_npfl(competition_code):
+        return []
+    from .npfl import fetch_matches_by_season
+    return fetch_matches_by_season(competition_code, season_year)
 
 
 # ══ FD provider — thin wrappers around football-data.org's REST API ══════════

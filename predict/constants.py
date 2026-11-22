@@ -113,7 +113,7 @@ COMPETITION_PROVIDERS = {
     "SVN": "OM", "NED2": "OM", "BRA2": "OM", "ARG2": "OM", "MEX2": "OM",
     "AUS": "OM", "UEL": "OM", "UECL": "OM", "KAZ": "OM",
     "ALG": "OF", "EGY": "OF", "GHA": "OF", "KEN": "OF", "MWI": "OF", "MAR": "OF",
-    "NGA": "OF", "RWA": "OF", "SEN": "OF", "ZAF": "OF", "TZA": "OF",
+    "NGA": "NPFL", "RWA": "OF", "SEN": "OF", "ZAF": "OF", "TZA": "OF",
     "UGA": "OF", "ZMB": "OF", "ZWE": "OF",
 }
 
