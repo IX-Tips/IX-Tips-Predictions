@@ -7,11 +7,9 @@ two team names, and a recognizable match separator are accepted.
 """
 import hashlib
 import logging
-import os
 import re
-from datetime import date, datetime
+from datetime import datetime
 from html.parser import HTMLParser
-from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
 import requests
