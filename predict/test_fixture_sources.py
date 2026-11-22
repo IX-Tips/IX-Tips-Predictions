@@ -270,12 +270,9 @@ class BulkFixtureDiscoveryTests(TestCase):
         self, supports, om_matches, fetch_by_date
     ):
         from datetime import date, timedelta
-
         today = date.today()
         first_day = today
         second_day = today + timedelta(days=1)
-        finished_day = today - timedelta(days=11)
-
         om_matches.return_value = [
             {
                 "utcDate": f"{first_day.isoformat()}T11:30:00+01:00",
@@ -290,7 +287,7 @@ class BulkFixtureDiscoveryTests(TestCase):
                 "awayTeam": {"name": "Delta"},
             },
             {
-                "utcDate": f"{finished_day.isoformat()}T15:00:00Z",
+                "utcDate": f"{(today - timedelta(days=11)).isoformat()}T15:00:00Z",
                 "status": "FINISHED",
                 "homeTeam": {"name": "Old"},
                 "awayTeam": {"name": "Match"},
