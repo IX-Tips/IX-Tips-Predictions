@@ -269,21 +269,28 @@ class BulkFixtureDiscoveryTests(TestCase):
     def test_bulk_feed_discovers_fixture_dates_without_scanning_every_day(
         self, supports, om_matches, fetch_by_date
     ):
+        from datetime import date, timedelta
+
+        today = date.today()
+        first_day = today
+        second_day = today + timedelta(days=1)
+        finished_day = today - timedelta(days=11)
+
         om_matches.return_value = [
             {
-                "utcDate": "2026-11-21T11:30:00+01:00",
+                "utcDate": f"{first_day.isoformat()}T11:30:00+01:00",
                 "status": "TIMED",
                 "homeTeam": {"name": "Alpha"},
                 "awayTeam": {"name": "Beta"},
             },
             {
-                "utcDate": "2026-11-22T14:00:00+01:00",
+                "utcDate": f"{second_day.isoformat()}T14:00:00+01:00",
                 "status": "TIMED",
                 "homeTeam": {"name": "Gamma"},
                 "awayTeam": {"name": "Delta"},
             },
             {
-                "utcDate": "2026-11-10T15:00:00Z",
+                "utcDate": f"{finished_day.isoformat()}T15:00:00Z",
                 "status": "FINISHED",
                 "homeTeam": {"name": "Old"},
                 "awayTeam": {"name": "Match"},
@@ -301,7 +308,7 @@ class BulkFixtureDiscoveryTests(TestCase):
         from predict.fixture_sources import fetch_upcoming_fixture_groups
         grouped = fetch_upcoming_fixture_groups(None, "EFLCUP", days_ahead=45)
 
-        self.assertEqual(list(grouped), ["2026-11-21", "2026-11-22"])
+        self.assertEqual(list(grouped), [first_day.isoformat(), second_day.isoformat()])
         self.assertEqual(fetch_by_date.call_count, 2)
         self.assertEqual(om_matches.call_count, 1)
 
