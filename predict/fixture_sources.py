@@ -59,6 +59,9 @@ def provider_configuration(provider, competition_code):
         return supports_open_matchday(competition_code), "OPEN_MATCHDAY_ENABLED"
     if provider == "OF":
         return supports_openfootball(competition_code), "OpenFootball CC0 public-domain data; no key required"
+    if provider == "NPFL":
+        from .providers import supports_npfl
+        return supports_npfl(competition_code), "NPFL public fixtures; no key required"
     return False, "Unknown provider"
 
 
@@ -237,7 +240,7 @@ def _provider_order(competition_code):
     providers = []
     for provider in configured:
         provider = str(provider).strip().upper()
-        if provider in {"FD", "UK", "LF", "AF", "OM", "OF"} and provider not in providers:
+        if provider in {"FD", "UK", "LF", "AF", "OM", "OF", "NPFL"} and provider not in providers:
             providers.append(provider)
 
     # API-Football is an independent fallback only when both its key and
@@ -391,6 +394,10 @@ def fetch_upcoming_fixture_groups(api_key, competition_code, days_ahead=45):
         elif primary == "OF" and supports_openfootball(competition_code):
             bulk_provider = "OF"
             season_matches = providers.of_current_matches(competition_code)
+        elif primary == "NPFL" and providers.supports_npfl(competition_code):
+            bulk_provider = "NPFL"
+            from .npfl import current_matches
+            season_matches = current_matches(competition_code)
 
         if bulk_provider:
             candidate_dates = sorted({
