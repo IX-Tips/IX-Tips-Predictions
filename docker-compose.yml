@@ -24,6 +24,8 @@ services:
     build: .
     restart: always
     command: supercronic /code/crontab
+    environment:
+      TZ: Africa/Nairobi
     env_file:
       - .env
     depends_on:
