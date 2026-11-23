@@ -62,6 +62,9 @@ def provider_configuration(provider, competition_code):
     if provider == "NPFL":
         from .providers import supports_npfl
         return supports_npfl(competition_code), "NPFL public fixtures; no key required"
+    if provider == "FKF":
+        from .providers import supports_fkf
+        return supports_fkf(competition_code), "FKF public fixtures; no key required"
     return False, "Unknown provider"
 
 
@@ -240,7 +243,7 @@ def _provider_order(competition_code):
     providers = []
     for provider in configured:
         provider = str(provider).strip().upper()
-        if provider in {"FD", "UK", "LF", "AF", "OM", "OF", "NPFL"} and provider not in providers:
+        if provider in {"FD", "UK", "LF", "AF", "OM", "OF", "NPFL", "FKF"} and provider not in providers:
             providers.append(provider)
 
     # API-Football is an independent fallback only when both its key and
