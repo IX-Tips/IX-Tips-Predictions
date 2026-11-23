@@ -88,6 +88,22 @@ class FootballLogoCatalogTests(SimpleTestCase):
         self.assertEqual(metadata["crest"], provider_crest)
         self.assertEqual(metadata["logo_source"], "provider")
 
+    def test_supplied_provider_crest_replaces_cached_country_flag(self):
+        provider_crest = "https://wmcfdzqntemdnrguqijw.supabase.co/storage/v1/object/public/news-images/spl-teams/3k.png"
+        cached = {
+            "shortName": "3K",
+            "crest": "https://flagcdn.com/w160/ke.png",
+            "logo_source": "competition-country-flag",
+        }
+        with patch("predict.constants.cache.get", return_value=cached):
+            with patch("predict.constants.get_football_team_logo_url", return_value=None):
+                with patch("predict.constants.cache.set") as cache_set:
+                    metadata = get_team_metadata("3K", "KEN", provider_crest=provider_crest)
+        self.assertEqual(metadata["crest"], provider_crest)
+        self.assertEqual(metadata["provider_crest"], provider_crest)
+        self.assertEqual(metadata["logo_source"], "provider")
+        cache_set.assert_called_once()
+
     def test_catalogue_is_checked_even_when_a_flag_is_cached(self):
         catalogue_logo = "https://assets.football-logos.cc/logos/turkey/512x512/club.hash.png"
         cached = {
