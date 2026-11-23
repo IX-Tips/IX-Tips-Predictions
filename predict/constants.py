@@ -741,7 +741,15 @@ def get_team_metadata(name, competition_code=None, provider_crest=None):
     # from the metadata cache. Keep them separate from any previously cached
     # country flag so the flag can never mask a real club badge.
     cached_crest = meta.get("crest")
-    provider_crest = meta.get("provider_crest") or provider_crest
+    cached_provider_crest = meta.get("provider_crest")
+    # Prefer the live provider value over a possibly stale cached provider URL.
+    provider_crest = (
+        provider_crest
+        if provider_crest and not _is_country_flag_url(provider_crest)
+        else cached_provider_crest
+        if cached_provider_crest and not _is_country_flag_url(cached_provider_crest)
+        else None
+    )
     if cached_crest and not _is_country_flag_url(cached_crest):
         provider_crest = provider_crest or cached_crest
     if provider_crest and not _is_country_flag_url(provider_crest):
