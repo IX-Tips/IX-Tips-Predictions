@@ -154,7 +154,11 @@ def _record_af_request_health(state):
 
 
 def _af_get(path, params=None):
-    """Call API-Football and return the `response` list (handles paging)."""
+    """Call API-Football and return the `response` list.
+
+    The endpoints currently used by this provider do not accept a `page`
+    parameter. Do not add one unless a specific endpoint documents it.
+    """
     if not AF_KEY:
         logger.info("API-Football key not set; skipping API-Football call %s", path)
         _record_af_request_health({
@@ -167,45 +171,31 @@ def _af_get(path, params=None):
 
     headers = {"x-apisports-key": AF_KEY}
     params = dict(params or {})
-    # API-Football only accepts the page parameter on endpoints that expose
-    # paginated results. Sending it to /leagues, /standings, or /teams causes
-    # the entire request to fail with an "invalid page" API error.
-    supports_pagination = path in {"fixtures", "players/topscorers"}
-    results = []
-    page = 1
+    # The provider's used endpoints do not accept a page parameter.
+    # Sending it causes API-Football to reject the whole request.
     request_error = None
-    while True:
-        request_params = dict(params)
-        if supports_pagination:
-            request_params["page"] = page
-        try:
-            r = requests.get(
-                f"{AF_BASE_URL}/{path}",
-                headers=headers,
-                params=request_params,
-                timeout=15,
-            )
-            r.raise_for_status()
-            data = r.json()
-            if not isinstance(data, dict):
-                raise ValueError("API-Football returned an invalid response payload")
-        except Exception as exc:
-            request_error = str(exc)[:500]
-            logger.warning("API-Football request failed: %s params=%s error=%s", path, request_params, exc)
-            break
+    request_params = dict(params)
+    try:
+        r = requests.get(
+            f"{AF_BASE_URL}/{path}",
+            headers=headers,
+            params=request_params,
+            timeout=15,
+        )
+        r.raise_for_status()
+        data = r.json()
+        if not isinstance(data, dict):
+            raise ValueError("API-Football returned an invalid response payload")
+    except Exception as exc:
+        request_error = str(exc)[:500]
+        logger.warning("API-Football request failed: %s params=%s error=%s", path, request_params, exc)
+        data = {}
 
-        if data.get("errors"):
-            request_error = str(data["errors"])[:500]
-            logger.warning("API-Football returned errors for %s: %s", path, data["errors"])
-            break
+    if data.get("errors"):
+        request_error = str(data["errors"])[:500]
+        logger.warning("API-Football returned errors for %s: %s", path, data["errors"])
 
-        results.extend(data.get("response", []) or [])
-        if not supports_pagination:
-            break
-        paging = data.get("paging", {}) or {}
-        if page >= (paging.get("total") or 1):
-            break
-        page += 1
+    results = [] if request_error else (data.get("response", []) or [])
 
     _record_af_request_health({
         "status": "error" if request_error else "ok",
