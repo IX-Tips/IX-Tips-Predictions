@@ -104,6 +104,58 @@ class ProviderDiagnosticsTests(TestCase):
         self.assertEqual(health["status"], "ok")
         self.assertIsNone(health["last_error"])
 
+    @patch("predict.providers.AF_KEY", "configured-test-key")
+    @patch("predict.providers.cache.set")
+    @patch("predict.providers.requests.get")
+    def test_af_get_does_not_send_page_to_leagues_endpoint(self, get, cache_set):
+        response = Mock()
+        response.json.return_value = {
+            "errors": [],
+            "response": [{"league": {"id": 123}}],
+        }
+        get.return_value = response
+
+        from predict.providers import _af_get
+        self.assertEqual(_af_get("leagues", {"search": "FKF Premier League"}), [
+            {"league": {"id": 123}}
+        ])
+        get.assert_called_once()
+        self.assertEqual(
+            get.call_args.kwargs["params"],
+            {"search": "FKF Premier League"},
+        )
+
+    @patch("predict.providers.AF_KEY", "configured-test-key")
+    @patch("predict.providers.cache.set")
+    @patch("predict.providers.requests.get")
+    def test_af_get_paginates_fixture_endpoint(self, get, cache_set):
+        first = Mock()
+        first.json.return_value = {
+            "errors": [],
+            "response": [{"fixture": {"id": 1}}],
+            "paging": {"total": 2, "current": 1},
+        }
+        second = Mock()
+        second.json.return_value = {
+            "errors": [],
+            "response": [{"fixture": {"id": 2}}],
+            "paging": {"total": 2, "current": 2},
+        }
+        get.side_effect = [first, second]
+
+        from predict.providers import _af_get
+        rows = _af_get("fixtures", {"league": 123, "season": 2026})
+
+        self.assertEqual([row["fixture"]["id"] for row in rows], [1, 2])
+        self.assertEqual(get.call_count, 2)
+        self.assertEqual(
+            [call.kwargs["params"] for call in get.call_args_list],
+            [
+                {"league": 123, "season": 2026, "page": 1},
+                {"league": 123, "season": 2026, "page": 2},
+            ],
+        )
+
     @patch("predict.fixture_sources._diagnostic_cache_get", return_value={
         "status": "error",
         "last_error": "Invalid API key",
@@ -188,7 +240,7 @@ class ProviderDiagnosticsTests(TestCase):
         from predict.providers import af_league_id
         self.assertEqual(af_league_id("KEN", 2026), 123)
         lookup.assert_called_once_with(
-            "leagues", {"search": "FKF Premier League", "country": "Kenya", "season": 2026}
+            "leagues", {"search": "FKF Premier League", "season": 2026}
         )
 
     @patch("predict.providers.cache.set")
