@@ -167,20 +167,31 @@ def _af_get(path, params=None):
 
     headers = {"x-apisports-key": AF_KEY}
     params = dict(params or {})
+    # API-Football only accepts the page parameter on endpoints that expose
+    # paginated results. Sending it to /leagues, /standings, or /teams causes
+    # the entire request to fail with an "invalid page" API error.
+    supports_pagination = path in {"fixtures", "players/topscorers"}
     results = []
     page = 1
     request_error = None
     while True:
-        params["page"] = page
+        request_params = dict(params)
+        if supports_pagination:
+            request_params["page"] = page
         try:
-            r = requests.get(f"{AF_BASE_URL}/{path}", headers=headers, params=params, timeout=15)
+            r = requests.get(
+                f"{AF_BASE_URL}/{path}",
+                headers=headers,
+                params=request_params,
+                timeout=15,
+            )
             r.raise_for_status()
             data = r.json()
             if not isinstance(data, dict):
                 raise ValueError("API-Football returned an invalid response payload")
         except Exception as exc:
             request_error = str(exc)[:500]
-            logger.warning("API-Football request failed: %s params=%s error=%s", path, params, exc)
+            logger.warning("API-Football request failed: %s params=%s error=%s", path, request_params, exc)
             break
 
         if data.get("errors"):
@@ -189,6 +200,8 @@ def _af_get(path, params=None):
             break
 
         results.extend(data.get("response", []) or [])
+        if not supports_pagination:
+            break
         paging = data.get("paging", {}) or {}
         if page >= (paging.get("total") or 1):
             break
@@ -243,7 +256,9 @@ def af_league_id(competition_code, season_year=None):
     except Exception:
         pass
 
-    params = {"search": league_name, "country": country}
+    # API-Football rejects combining the search and country parameters.
+    # Search broadly, then enforce exact country and league-name matching below.
+    params = {"search": league_name}
     if season_year:
         params["season"] = int(season_year)
     rows = _af_get("leagues", params)
