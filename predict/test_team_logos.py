@@ -134,6 +134,9 @@ class TeamLogoDashboardTests(TestCase):
         self.assertIn("provider-crest.png", rendered)
         self.assertIn('Source: <span class="js-logo-source">catalogue</span>', rendered)
         self.assertIn('data-provider-crest="provider-crest.png"', rendered)
+        get_team_metadata.assert_called_once_with(
+            "Arsenal", "PL", provider_crest="provider-crest.png"
+        )
         self.assertIn("image fallback", rendered)
 
 
