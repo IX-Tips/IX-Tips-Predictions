@@ -3348,7 +3348,7 @@ def ajax_league_table(request):
     for row in table:
         team = row.get("team", {})
         name = team.get("name", "")
-        meta = get_team_metadata(name, comp)
+        meta = get_team_metadata(name, comp, provider_crest=team.get("crest"))
         team["shortName"] = meta.get("shortName") or team.get("shortName") or name
         team["crest"] = meta.get("crest") or team.get("crest") or static("logos/default.png")
     html = render_to_string("partials/league_table.html", {"league_table": table})
@@ -3393,8 +3393,8 @@ def team_logos_preview(request):
 
         for name, provider_short_name, provider_crest in team_sources:
             normalized = _normalize_team_lookup_value(name)
-            meta = get_team_metadata(name, selected_code) or {}
-            crest = meta.get("crest") or get_football_team_logo_url(name, selected_code) or static("logos/default.png")
+            meta = get_team_metadata(name, selected_code, provider_crest=provider_crest) or {}
+            crest = meta.get("crest") or provider_crest or country_flag_url(selected_code) or static("logos/default.png")
             teams_by_key[normalized] = {
                 "name": name,
                 "short": meta.get("shortName") or provider_short_name or name,
@@ -3418,8 +3418,11 @@ def team_logos_preview(request):
     })
 
 
-def match_team_logo(team_name, competition_code=None):
-    return get_football_team_logo_url(team_name, competition_code) or static("logos/default.png")
+def match_team_logo(team_name, competition_code=None, provider_crest=None):
+    metadata = get_team_metadata(
+        team_name, competition_code, provider_crest=provider_crest
+    ) or {}
+    return metadata.get("crest") or country_flag_url(competition_code) or static("logos/default.png")
 
 
 def flatten_competitions(comp_dict):
@@ -3429,8 +3432,11 @@ def flatten_competitions(comp_dict):
 def league_table_view(request, competition_code):
     table = get_league_table(competition_code)
     for team in table:
-        team_name = team["team"]["name"]
-        team["team"]["logo"] = match_team_logo(team_name, competition_code)
+        team_obj = team["team"]
+        team_name = team_obj["name"]
+        team_obj["logo"] = match_team_logo(
+            team_name, competition_code, provider_crest=team_obj.get("crest")
+        )
 
     competition_name = flatten_competitions(COMPETITIONS).get(competition_code, competition_code)
 

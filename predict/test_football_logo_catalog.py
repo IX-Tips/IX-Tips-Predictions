@@ -3,6 +3,8 @@ from unittest.mock import patch
 from django.test import SimpleTestCase
 
 from predict.constants import (
+    COMPETITION_COUNTRY,
+    country_flag_url,
     get_football_competition_logo_url,
     FOOTBALL_COMPETITION_LOGO_SLUGS,
     get_football_team_logo_url,
@@ -87,6 +89,45 @@ class FootballLogoCatalogTests(SimpleTestCase):
                     metadata = get_team_metadata("Unknown FC", "TUR")
         self.assertEqual(metadata["crest"], provider_crest)
         self.assertEqual(metadata["logo_source"], "provider")
+
+    def test_supplied_provider_crest_replaces_cached_country_flag(self):
+        provider_crest = "https://wmcfdzqntemdnrguqijw.supabase.co/storage/v1/object/public/news-images/spl-teams/3k.png"
+        cached = {
+            "shortName": "3K",
+            "crest": "https://flagcdn.com/w160/ke.png",
+            "logo_source": "competition-country-flag",
+        }
+        with patch("predict.constants.cache.get", return_value=cached):
+            with patch("predict.constants.get_football_team_logo_url", return_value=None):
+                with patch("predict.constants.cache.set") as cache_set:
+                    metadata = get_team_metadata("3K", "KEN", provider_crest=provider_crest)
+        self.assertEqual(metadata["crest"], provider_crest)
+        self.assertEqual(metadata["provider_crest"], provider_crest)
+        self.assertEqual(metadata["logo_source"], "provider")
+        cache_set.assert_called_once()
+
+    def test_provider_badge_precedes_country_flag_for_every_configured_league(self):
+        for competition_code in COMPETITION_COUNTRY:
+            with self.subTest(competition_code=competition_code):
+                flag = country_flag_url(competition_code)
+                provider_crest = f"https://provider.example/{competition_code.lower()}-club.png"
+                cached = {
+                    "shortName": f"Example {competition_code}",
+                    "crest": flag,
+                    "provider_crest": "https://provider.example/stale-club.png",
+                    "logo_source": "competition-country-flag",
+                }
+                with patch("predict.constants.cache.get", return_value=cached):
+                    with patch("predict.constants.get_football_team_logo_url", return_value=None):
+                        with patch("predict.constants.cache.set"):
+                            metadata = get_team_metadata(
+                                f"Example {competition_code}",
+                                competition_code,
+                                provider_crest=provider_crest,
+                            )
+                self.assertEqual(metadata["crest"], provider_crest)
+                self.assertEqual(metadata["provider_crest"], provider_crest)
+                self.assertEqual(metadata["logo_source"], "provider")
 
     def test_catalogue_is_checked_even_when_a_flag_is_cached(self):
         catalogue_logo = "https://assets.football-logos.cc/logos/turkey/512x512/club.hash.png"

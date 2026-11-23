@@ -101,6 +101,19 @@ class CachedMetadataLogoFallbackTests(TestCase):
 
 
 class TeamLogoDashboardTests(TestCase):
+    def test_shared_standings_logo_resolver_passes_provider_badge_before_flag(self):
+        from predict.views import match_team_logo
+
+        provider_crest = "https://wmcfdzqntemdnrguqijw.supabase.co/storage/v1/object/public/news-images/spl-teams/3k.png"
+        with patch("predict.views.get_team_metadata", return_value={"crest": provider_crest}) as metadata_mock:
+            self.assertEqual(
+                match_team_logo("3K", "KEN", provider_crest=provider_crest),
+                provider_crest,
+            )
+        metadata_mock.assert_called_once_with(
+            "3K", "KEN", provider_crest=provider_crest
+        )
+
     def test_competition_logo_ignores_stale_256_catalogue_cache(self):
         from django.test import override_settings
         from predict.views import resolve_competition_logo
@@ -123,7 +136,7 @@ class TeamLogoDashboardTests(TestCase):
             with patch("predict.views.get_league_table", return_value=standings):
                 with patch("predict.views.get_team_metadata", return_value={
                     "shortName": "ARS", "crest": "catalog-crest.png", "logo_source": "catalogue"
-                }):
+                }) as metadata_mock:
                     with patch("predict.views.resolve_competition_logo", return_value="league-logo.png"):
                         response = team_logos_preview(request)
 
@@ -134,6 +147,9 @@ class TeamLogoDashboardTests(TestCase):
         self.assertIn("provider-crest.png", rendered)
         self.assertIn('Source: <span class="js-logo-source">catalogue</span>', rendered)
         self.assertIn('data-provider-crest="provider-crest.png"', rendered)
+        metadata_mock.assert_called_once_with(
+            "Arsenal", "PL", provider_crest="provider-crest.png"
+        )
         self.assertIn("image fallback", rendered)
 
 
