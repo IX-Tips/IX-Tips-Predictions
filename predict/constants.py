@@ -732,17 +732,20 @@ def _is_country_flag_url(url):
     return str(url or "").startswith("https://flagcdn.com/")
 
 
-def get_team_metadata(name, competition_code=None):
+def get_team_metadata(name, competition_code=None, provider_crest=None):
     key = team_meta_cache_key(name)
     meta = cache.get(key, {"shortName": name, "crest": "", "competition": competition_code})
     fallback_competition = competition_code or meta.get("competition")
 
-    # A previous request may have cached a country flag in "crest". Preserve
-    # real provider crests separately so a cached flag never masks them.
+    # Provider badges may arrive with standings/fixture payloads rather than
+    # from the metadata cache. Keep them separate from any previously cached
+    # country flag so the flag can never mask a real club badge.
     cached_crest = meta.get("crest")
-    provider_crest = meta.get("provider_crest")
+    provider_crest = meta.get("provider_crest") or provider_crest
     if cached_crest and not _is_country_flag_url(cached_crest):
         provider_crest = provider_crest or cached_crest
+    if provider_crest and not _is_country_flag_url(provider_crest):
+        meta = {**meta, "provider_crest": provider_crest}
 
     # Always check the bundled club catalogue before accepting any fallback.
     team_logo = get_football_team_logo_url(name, fallback_competition)
