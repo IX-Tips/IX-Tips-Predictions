@@ -213,7 +213,7 @@ class ProviderDiagnosticsTests(TestCase):
     def test_africa_uses_api_football_only_as_a_configured_fallback(self):
         from predict.fixture_sources import _provider_order
 
-        self.assertEqual(_provider_order("KEN"), ["OF", "AF"])
+        self.assertEqual(_provider_order("KEN"), ["FKF", "AF"])
 
     @patch("predict.providers.cache.set")
     @patch("predict.providers.cache.get", return_value=None)
