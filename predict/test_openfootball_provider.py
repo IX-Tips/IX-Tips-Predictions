@@ -58,13 +58,14 @@ class OpenFootballAfricaParserTests(TestCase):
             "ALG", "EGY", "GHA", "KEN", "MWI", "MAR", "NGA",
             "RWA", "SEN", "ZAF", "TZA", "UGA", "ZMB", "ZWE",
         })
-        # Nigeria now has a dedicated NPFL source; the other African leagues
-        # in this catalogue continue to use OpenFootball.
+        # Nigeria and Kenya have dedicated federation sources; the remaining
+        # African leagues in this catalogue continue to use OpenFootball.
         self.assertEqual(COMPETITION_PROVIDERS["NGA"], "NPFL")
+        self.assertEqual(COMPETITION_PROVIDERS["KEN"], "FKF")
         self.assertTrue(all(
             COMPETITION_PROVIDERS[code] == "OF"
             for code in OPENFOOTBALL_COMPETITIONS
-            if code != "NGA"
+            if code not in {"NGA", "KEN"}
         ))
         self.assertTrue(all(code in COMPETITIONS for code in OPENFOOTBALL_COMPETITIONS))
 
