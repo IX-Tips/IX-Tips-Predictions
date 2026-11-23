@@ -108,6 +108,7 @@ _PROVIDER_DISPATCH = {
     "OM": {},
     "OF": {},
     "NPFL": {},
+    "FKF": {},
 }
 
 
@@ -1122,6 +1123,57 @@ def npfl_fetch_matches_by_season(competition_code, season_year):
         return []
     from .npfl import fetch_matches_by_season
     return fetch_matches_by_season(competition_code, season_year)
+
+
+# ══ FKF Premier League (Kenya) — official FKF public fixtures ═════════════════
+def supports_fkf(competition_code):
+    return str(competition_code or "").upper() == "KEN" and os.environ.get(
+        "FKF_SOURCE_ENABLED", "true"
+    ).strip().lower() in {"1", "true", "yes", "on"}
+
+
+@_register(providers=["FKF"], operation="fetch_matches_by_date")
+def fkf_fetch_matches_by_date(competition_code, match_date):
+    if not supports_fkf(competition_code):
+        return []
+    from .fkf import fetch_matches_by_date
+    matches = fetch_matches_by_date(competition_code, match_date)
+    if matches:
+        return matches
+    from .openfootball import fetch_matches_by_date as of_fetch
+    return of_fetch(competition_code, match_date)
+
+
+@_register(providers=["FKF"], operation="fetch_matches_by_season")
+def fkf_fetch_matches_by_season(competition_code, season_year):
+    if not supports_fkf(competition_code):
+        return []
+    from .fkf import fetch_matches_by_season
+    matches = fetch_matches_by_season(competition_code, season_year)
+    if matches:
+        return matches
+    from .openfootball import fetch_matches_by_season as of_fetch
+    return of_fetch(competition_code, season_year)
+
+
+@_register(providers=["FKF"], operation="fetch_standings")
+def fkf_fetch_standings(competition_code):
+    if not supports_fkf(competition_code):
+        return []
+    from .fkf import fetch_standings
+    return fetch_standings(competition_code)
+
+
+@_register(providers=["FKF"], operation="fetch_teams")
+def fkf_fetch_teams(competition_code):
+    if not supports_fkf(competition_code):
+        return None, []
+    from .fkf import fetch_teams
+    teams = fetch_teams(competition_code)
+    if not teams:
+        from .openfootball import fetch_teams as of_teams
+        teams = of_teams(competition_code)
+    return None, teams
 
 
 # ══ FD provider — thin wrappers around football-data.org's REST API ══════════
