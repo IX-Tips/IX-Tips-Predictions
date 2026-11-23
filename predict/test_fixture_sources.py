@@ -128,32 +128,23 @@ class ProviderDiagnosticsTests(TestCase):
     @patch("predict.providers.AF_KEY", "configured-test-key")
     @patch("predict.providers.cache.set")
     @patch("predict.providers.requests.get")
-    def test_af_get_paginates_fixture_endpoint(self, get, cache_set):
-        first = Mock()
-        first.json.return_value = {
+    def test_af_get_does_not_send_page_to_fixtures_endpoint(self, get, cache_set):
+        response = Mock()
+        response.json.return_value = {
             "errors": [],
-            "response": [{"fixture": {"id": 1}}],
+            "response": [{"fixture": {"id": 1}}, {"fixture": {"id": 2}}],
             "paging": {"total": 2, "current": 1},
         }
-        second = Mock()
-        second.json.return_value = {
-            "errors": [],
-            "response": [{"fixture": {"id": 2}}],
-            "paging": {"total": 2, "current": 2},
-        }
-        get.side_effect = [first, second]
+        get.return_value = response
 
         from predict.providers import _af_get
-        rows = _af_get("fixtures", {"league": 123, "season": 2026})
+        rows = _af_get("fixtures", {"league": 123, "season": 2024})
 
         self.assertEqual([row["fixture"]["id"] for row in rows], [1, 2])
-        self.assertEqual(get.call_count, 2)
+        get.assert_called_once()
         self.assertEqual(
-            [call.kwargs["params"] for call in get.call_args_list],
-            [
-                {"league": 123, "season": 2026, "page": 1},
-                {"league": 123, "season": 2026, "page": 2},
-            ],
+            get.call_args.kwargs["params"],
+            {"league": 123, "season": 2024},
         )
 
     @patch("predict.fixture_sources._diagnostic_cache_get", return_value={
