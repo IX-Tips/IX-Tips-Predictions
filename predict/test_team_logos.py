@@ -123,7 +123,7 @@ class TeamLogoDashboardTests(TestCase):
             with patch("predict.views.get_league_table", return_value=standings):
                 with patch("predict.views.get_team_metadata", return_value={
                     "shortName": "ARS", "crest": "catalog-crest.png", "logo_source": "catalogue"
-                }):
+                }) as metadata_mock:
                     with patch("predict.views.resolve_competition_logo", return_value="league-logo.png"):
                         response = team_logos_preview(request)
 
@@ -134,7 +134,7 @@ class TeamLogoDashboardTests(TestCase):
         self.assertIn("provider-crest.png", rendered)
         self.assertIn('Source: <span class="js-logo-source">catalogue</span>', rendered)
         self.assertIn('data-provider-crest="provider-crest.png"', rendered)
-        get_team_metadata.assert_called_once_with(
+        metadata_mock.assert_called_once_with(
             "Arsenal", "PL", provider_crest="provider-crest.png"
         )
         self.assertIn("image fallback", rendered)
