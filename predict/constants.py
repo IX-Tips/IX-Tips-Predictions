@@ -118,6 +118,8 @@ COMPETITION_PROVIDERS = {
     "ALG": "OF", "EGY": "OF", "GHA": "OF", "KEN": "FKF", "MWI": "OF", "MAR": "OF",
     "NGA": "NPFL", "RWA": "OF", "SEN": "OF", "ZAF": "OF", "TZA": "OF",
     "UGA": "OF", "ZMB": "OF", "ZWE": "OF",
+    "ANG": "RSSSF", "BEN": "RSSSF", "BFA": "RSSSF",
+    "BDI": "RSSSF", "LBR": "RSSSF", "MTN": "RSSSF",
 }
 
 # football-data.co.uk mapping: our code -> (kind, fduk_code).
