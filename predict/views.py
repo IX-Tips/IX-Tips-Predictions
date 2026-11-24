@@ -598,9 +598,10 @@ def refresh_competition_odds(competition_code, force=False, match_dates=None):
 
 
 def update_all_odds():
-    """Fetch and update odds for ALL competitions in COMPETITION_SPORT_MAP"""
+    """Refresh primary-feed competitions plus African API-Football odds leagues."""
     total_saved = 0
-    for comp in COMPETITION_SPORT_MAP.keys():
+    competitions = list(COMPETITION_SPORT_MAP) + ["KEN", "NGA"]
+    for comp in competitions:
         total_saved += update_odds_in_db(comp)
     return total_saved
 
