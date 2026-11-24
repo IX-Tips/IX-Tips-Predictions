@@ -1176,6 +1176,19 @@ def fkf_fetch_teams(competition_code):
     return None, teams
 
 
+# ══ RSSSF — dated African domestic fixtures ════════════════════════════════
+@_register(providers=["RSSSF"], operation="fetch_matches_by_date")
+def rsssf_fetch_matches_by_date(competition_code, match_date):
+    from .rsssf import fetch_matches_by_date
+    return fetch_matches_by_date(competition_code, match_date)
+
+
+@_register(providers=["RSSSF"], operation="fetch_matches_by_season")
+def rsssf_fetch_matches_by_season(competition_code, season_year):
+    from .rsssf import fetch_matches_by_season
+    return fetch_matches_by_season(competition_code, season_year)
+
+
 # ══ FD provider — thin wrappers around football-data.org's REST API ══════════
 # These are registered in the same dispatch table so all fetcher functions can
 # use dispatch_provider() instead of manual if/elif chains.
