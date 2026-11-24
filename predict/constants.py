@@ -322,6 +322,8 @@ COMPETITION_COUNTRY = {
     "ALG": "dz", "EGY": "eg", "GHA": "gh", "KEN": "ke", "MWI": "mw",
     "MAR": "ma", "NGA": "ng", "RWA": "rw", "SEN": "sn", "ZAF": "za",
     "TZA": "tz", "UGA": "ug", "ZMB": "zm", "ZWE": "zw",
+    "ANG": "ao", "BEN": "bj", "BFA": "bf",
+    "BDI": "bi", "LBR": "lr", "MTN": "mr",
 }
 
 
