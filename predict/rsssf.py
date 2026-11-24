@@ -82,6 +82,8 @@ def parse_rsssf_text(content, competition_code, season_year):
 
     for raw_line in (content or "").splitlines():
         date_match = _DATE_RE.search(raw_line)
+        if re.match(r"^\\s*Round\\s+\\d+", raw_line, re.I) and not date_match:
+            current_day = None
         if date_match:
             month = _MONTHS[date_match.group(1).title()]
             day = int(date_match.group(2))
