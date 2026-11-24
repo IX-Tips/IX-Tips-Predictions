@@ -64,6 +64,10 @@ Round 1
             _page_url("LBR", 2026),
             "https://www.rsssf.org/tablesl/liber2027.html",
         )
+        self.assertEqual(
+            _page_url("UGA", 2026),
+            "https://www.rsssf.org/tableso/oeg2027.html",
+        )
         self.assertEqual(season_year_for_date(date(2026, 11, 24)), 2026)
         self.assertEqual(season_year_for_date(date(2027, 1, 6)), 2026)
 
@@ -89,6 +93,30 @@ Round 1
         self.assertEqual(matches[0]["awayTeam"]["name"], "Recreativo do Libolo")
         self.assertEqual(matches[0]["score"]["fullTime"], {"home": 0, "away": 3})
 
+    def test_uganda_current_season_page_fixtures_parse_with_december_rollover(self):
+        source = """
+Round 10
+[Nov 25]
+  Maroons                  -   Villa
+  Ntugasaze                -   Police
+Round 12
+[Dec 4]
+  Maroons                  -   Kigezi Homeboyz
+Table:
+"""
+        matches = parse_rsssf_text(source, "UGA", 2026)
+
+        self.assertEqual(len(matches), 3)
+        self.assertEqual(
+            [(m["utcDate"], m["homeTeam"]["name"], m["awayTeam"]["name"]) for m in matches],
+            [
+                ("2026-11-25", "Maroons", "Villa"),
+                ("2026-11-25", "Ntugasaze", "Police"),
+                ("2026-12-04", "Maroons", "Kigezi Homeboyz"),
+            ],
+        )
+        self.assertTrue(all(m["status"] == "TIMED" for m in matches))
+
     def test_round_header_with_inline_date_is_supported(self):
         source = """Round 3 [Oct 25]
   Home FC                 2-1  Away FC
@@ -102,10 +130,18 @@ Round 1
             self.assertFalse(supports_rsssf("ANG"))
         with patch.dict(os.environ, {"RSSSF_SOURCE_ENABLED": "true"}):
             self.assertTrue(supports_rsssf("ANG"))
+            self.assertTrue(supports_rsssf("UGA"))
             self.assertFalse(supports_rsssf("KEN"))
 
-    def test_six_rsssf_competitions_are_registered(self):
+    def test_six_rsssf_primary_competitions_are_registered(self):
         expected = {"ANG", "BEN", "BFA", "BDI", "LBR", "MTN"}
-        self.assertEqual(set(RSSSF_COMPETITIONS), expected)
+        self.assertEqual(set(RSSSF_COMPETITIONS), expected | {"UGA"})
         self.assertTrue(expected.issubset(COMPETITIONS))
         self.assertTrue(all(COMPETITION_PROVIDERS[code] == "RSSSF" for code in expected))
+
+    def test_uganda_uses_rsssf_only_as_fixture_fallback(self):
+        from predict.fixture_sources import FIXTURE_PROVIDER_ORDER
+
+        self.assertEqual(COMPETITION_PROVIDERS["UGA"], "OF")
+        self.assertEqual(FIXTURE_PROVIDER_ORDER["UGA"], ["OF", "RSSSF"])
+        self.assertIn("UGA", COMPETITIONS)
