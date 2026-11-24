@@ -109,6 +109,7 @@ _PROVIDER_DISPATCH = {
     "OF": {},
     "NPFL": {},
     "FKF": {},
+    "RSSSF": {},
 }
 
 
@@ -1174,6 +1175,33 @@ def fkf_fetch_teams(competition_code):
         from .openfootball import fetch_teams as of_teams
         teams = of_teams(competition_code)
     return None, teams
+
+
+# ══ RSSSF — dated African domestic fixtures ════════════════════════════════
+def supports_rsssf(competition_code):
+    """RSSSF is opt-in: its archive is copyrighted and requires permission."""
+    import os
+    from .rsssf import RSSSF_COMPETITIONS
+    enabled = os.environ.get("RSSSF_SOURCE_ENABLED", "false").strip().lower() in {
+        "1", "true", "yes", "on"
+    }
+    return enabled and str(competition_code or "").upper() in RSSSF_COMPETITIONS
+
+
+@_register(providers=["RSSSF"], operation="fetch_matches_by_date")
+def rsssf_fetch_matches_by_date(competition_code, match_date):
+    if not supports_rsssf(competition_code):
+        return []
+    from .rsssf import fetch_matches_by_date
+    return fetch_matches_by_date(competition_code, match_date)
+
+
+@_register(providers=["RSSSF"], operation="fetch_matches_by_season")
+def rsssf_fetch_matches_by_season(competition_code, season_year):
+    if not supports_rsssf(competition_code):
+        return []
+    from .rsssf import fetch_matches_by_season
+    return fetch_matches_by_season(competition_code, season_year)
 
 
 # ══ FD provider — thin wrappers around football-data.org's REST API ══════════

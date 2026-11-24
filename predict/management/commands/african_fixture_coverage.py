@@ -6,12 +6,13 @@ from django.core.management.base import BaseCommand
 from django.db.models import Count
 
 from predict.constants import COMPETITIONS, COMPETITION_PROVIDERS, OPENFOOTBALL_COMPETITIONS
+from predict.rsssf import RSSSF_COMPETITIONS
 from predict.fixture_sources import (
     _provider_order, get_provider, get_provider_diagnostic, provider_configuration,
 )
 from predict.models import MatchPrediction
 
-AFRICAN_CODES = set(OPENFOOTBALL_COMPETITIONS)
+AFRICAN_CODES = set(OPENFOOTBALL_COMPETITIONS) | set(RSSSF_COMPETITIONS)
 
 
 def build_report(today=None):

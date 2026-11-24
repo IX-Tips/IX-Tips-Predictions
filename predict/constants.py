@@ -88,7 +88,10 @@ COMPETITIONS = {
     "NGA": "Nigeria Professional Football League", "RWA": "Rwanda Premier League",
     "SEN": "Senegal Ligue 1", "ZAF": "South African Premiership",
     "TZA": "Tanzania Premier League", "UGA": "Uganda Premier League",
-    "ZMB": "Zambia Super League", "ZWE": "Zimbabwe Premier Soccer League"
+    "ZMB": "Zambia Super League", "ZWE": "Zimbabwe Premier Soccer League",
+    "ANG": "Angola Girabola", "BEN": "Benin Ligue Pro",
+    "BFA": "Burkina Faso Ligue 1", "BDI": "Burundi Ligue A",
+    "LBR": "Liberia First Division", "MTN": "Mauritania Ligue 1"
 }
 
 # Which provider serves each competition. Anything not listed defaults to "FD".
@@ -115,6 +118,8 @@ COMPETITION_PROVIDERS = {
     "ALG": "OF", "EGY": "OF", "GHA": "OF", "KEN": "FKF", "MWI": "OF", "MAR": "OF",
     "NGA": "NPFL", "RWA": "OF", "SEN": "OF", "ZAF": "OF", "TZA": "OF",
     "UGA": "OF", "ZMB": "OF", "ZWE": "OF",
+    "ANG": "RSSSF", "BEN": "RSSSF", "BFA": "RSSSF",
+    "BDI": "RSSSF", "LBR": "RSSSF", "MTN": "RSSSF",
 }
 
 # football-data.co.uk mapping: our code -> (kind, fduk_code).
@@ -317,6 +322,8 @@ COMPETITION_COUNTRY = {
     "ALG": "dz", "EGY": "eg", "GHA": "gh", "KEN": "ke", "MWI": "mw",
     "MAR": "ma", "NGA": "ng", "RWA": "rw", "SEN": "sn", "ZAF": "za",
     "TZA": "tz", "UGA": "ug", "ZMB": "zm", "ZWE": "zw",
+    "ANG": "ao", "BEN": "bj", "BFA": "bf",
+    "BDI": "bi", "LBR": "lr", "MTN": "mr",
 }
 
 
