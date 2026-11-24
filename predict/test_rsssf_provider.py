@@ -63,6 +63,26 @@ Round 1
         self.assertEqual(season_year_for_date(date(2026, 11, 24)), 2026)
         self.assertEqual(season_year_for_date(date(2027, 1, 6)), 2026)
 
+    def test_html_page_markup_is_stripped_before_parsing(self):
+        source = """<!doctype html><html><body><pre>
+Round 1
+[Sep 18]
+  Rahimo FC              1-0  AS Douanes
+  Vitesse FC              -   FocuSport FC
+</pre></body></html>"""
+        matches = parse_rsssf_text(source, "BFA", 2026)
+        self.assertEqual(len(matches), 2)
+        self.assertEqual(matches[0]["homeTeam"]["name"], "Rahimo FC")
+        self.assertEqual(matches[1]["status"], "TIMED")
+
+    def test_round_header_with_inline_date_is_supported(self):
+        source = """Round 3 [Oct 25]
+  Home FC                 2-1  Away FC
+"""
+        matches = parse_rsssf_text(source, "ANG", 2026)
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["utcDate"], "2026-10-25")
+
     def test_six_rsssf_competitions_are_registered(self):
         expected = {"ANG", "BEN", "BFA", "BDI", "LBR", "MTN"}
         self.assertEqual(set(RSSSF_COMPETITIONS), expected)
