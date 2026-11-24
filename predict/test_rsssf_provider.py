@@ -75,6 +75,16 @@ Round 1
         self.assertEqual(matches[0]["homeTeam"]["name"], "Rahimo FC")
         self.assertEqual(matches[1]["status"], "TIMED")
 
+    def test_actual_rsssf_spacing_and_ground_note_are_parsed(self):
+        source = """Round 1 [Aug 21]
+  FC Cabinda               0-3 Recreativo do Libolo     [at Uíge]
+"""
+        matches = parse_rsssf_text(source, "ANG", 2026)
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]["homeTeam"]["name"], "FC Cabinda")
+        self.assertEqual(matches[0]["awayTeam"]["name"], "Recreativo do Libolo")
+        self.assertEqual(matches[0]["score"]["fullTime"], {"home": 0, "away": 3})
+
     def test_round_header_with_inline_date_is_supported(self):
         source = """Round 3 [Oct 25]
   Home FC                 2-1  Away FC
