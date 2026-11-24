@@ -107,13 +107,11 @@ def parse_rsssf_text(content, competition_code, season_year):
 
     lines = _plain_text(content).splitlines()
 
-    # RSSSF pages place current-season fixtures between Round 1 and Table:.
-    # Exclude standings and page navigation so they cannot become fake matches.
+    # RSSSF pages place dated fixtures in round sections before the league
+    # table. Start at the first round heading (not necessarily Round 1, since
+    # some pages are updated mid-season) and exclude standings/navigation.
     first_round = next(
-        (
-            index for index, line in enumerate(lines)
-            if re.match(r"^\s*Round\s+1\b", line, re.I)
-        ),
+        (index for index, line in enumerate(lines) if _ROUND_RE.match(line)),
         None,
     )
     if first_round is None:
