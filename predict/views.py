@@ -66,6 +66,7 @@ from .utils import (
     get_team_recent_form,
     canonical_fixture_match_id,
     _normalize_team_lookup_value,
+    fetch_odds_for_date,
 )
 
 # -------------------------
@@ -145,6 +146,7 @@ def fetch_odds(sport_key):
 
 
 def extract_odds_from_bookmaker(bookmaker, game):
+    """Extract supported markets from either provider's normalized event shape."""
     odds_out = {
         "home": None,
         "draw": None,
@@ -152,29 +154,42 @@ def extract_odds_from_bookmaker(bookmaker, game):
         "over25": None,
         "under25": None,
         "btts_yes": None,
+        "btts_no": None,
     }
-    for mk in bookmaker.get("markets", []):
-        if mk["key"] == "h2h":
-            for outcome in mk["outcomes"]:
-                if outcome["name"] == game["home_team"]:
-                    odds_out["home"] = outcome["price"]
-                elif outcome["name"] == game["away_team"]:
-                    odds_out["away"] = outcome["price"]
-                elif outcome["name"].lower() in ["draw", "x"]:
-                    odds_out["draw"] = outcome["price"]
+    home_name = normalize_team_lookup_key(game.get("home_team"))
+    away_name = normalize_team_lookup_key(game.get("away_team"))
 
-        elif mk["key"] == "totals":
-            for outcome in mk["outcomes"]:
-                if outcome.get("point") == 2.5:
-                    if outcome["name"].lower() == "over":
-                        odds_out["over25"] = outcome["price"]
-                    elif outcome["name"].lower() == "under":
-                        odds_out["under25"] = outcome["price"]
+    for market in bookmaker.get("markets", []):
+        market_key = market.get("key")
+        for outcome in market.get("outcomes", []):
+            name = str(outcome.get("name") or "").strip()
+            normalized_name = normalize_team_lookup_key(name)
+            price = outcome.get("price")
+            if price is None:
+                continue
 
-        elif mk["key"] == "btts":
-            for outcome in mk["outcomes"]:
-                if outcome["name"].lower() == "yes":
-                    odds_out["btts_yes"] = outcome["price"]
+            if market_key == "h2h":
+                if normalized_name == home_name:
+                    odds_out["home"] = price
+                elif normalized_name == away_name:
+                    odds_out["away"] = price
+                elif name.lower() in {"draw", "x"}:
+                    odds_out["draw"] = price
+
+            elif market_key in {"totals", "over_under", "total_goals"}:
+                point = outcome.get("point")
+                lowered = name.lower()
+                if point == 2.5 or "2.5" in lowered:
+                    if lowered.startswith("over"):
+                        odds_out["over25"] = price
+                    elif lowered.startswith("under"):
+                        odds_out["under25"] = price
+
+            elif market_key in {"btts", "both_to_score"}:
+                if name.lower() in {"yes", "y", "true"}:
+                    odds_out["btts_yes"] = price
+                elif name.lower() in {"no", "n", "false"}:
+                    odds_out["btts_no"] = price
 
     return odds_out
 
@@ -434,23 +449,46 @@ def get_actual_scorer_names(competition_code, match_date, home_team, away_team):
 
 
 def upsert_match_odds(prediction, odds, bookmaker=None):
+    """Persist only supplied prices so partial feeds never erase valid markets."""
     if not prediction or not odds:
         return None
 
-    return MatchOdds.objects.update_or_create(
+    odds_obj, created = MatchOdds.objects.get_or_create(
         match=prediction,
-        defaults={
-            "home_win": odds.get("home"),
-            "draw": odds.get("draw"),
-            "away_win": odds.get("away"),
-            "over_2_5": odds.get("over25"),
-            "under_2_5": odds.get("under25"),
-            "btts_yes": odds.get("btts_yes"),
-            "btts_no": odds.get("btts_no"),
-            "bookmaker": bookmaker or odds.get("bookmaker"),
-            "market_sources": odds.get("market_sources") or {},
-        },
+        defaults={"market_sources": {}},
     )
+    field_map = {
+        "home": "home_win",
+        "draw": "draw",
+        "away": "away_win",
+        "over25": "over_2_5",
+        "under25": "under_2_5",
+        "btts_yes": "btts_yes",
+        "btts_no": "btts_no",
+    }
+    changed_fields = []
+    for market_key, model_field in field_map.items():
+        value = odds.get(market_key)
+        if value is not None and getattr(odds_obj, model_field) != value:
+            setattr(odds_obj, model_field, value)
+            changed_fields.append(model_field)
+
+    source_updates = odds.get("market_sources") or {}
+    if source_updates:
+        merged_sources = dict(odds_obj.market_sources or {})
+        merged_sources.update(source_updates)
+        if merged_sources != (odds_obj.market_sources or {}):
+            odds_obj.market_sources = merged_sources
+            changed_fields.append("market_sources")
+
+    selected_bookmaker = bookmaker or odds.get("bookmaker")
+    if selected_bookmaker and odds_obj.bookmaker != selected_bookmaker:
+        odds_obj.bookmaker = selected_bookmaker
+        changed_fields.append("bookmaker")
+
+    if created or changed_fields:
+        odds_obj.save()
+    return odds_obj, created
 
 
 def resolve_prediction_odds(prediction):
@@ -460,14 +498,58 @@ def resolve_prediction_odds(prediction):
         return None
 
 
-def update_odds_in_db(competition_code, match_dates=None):
-    """Fetch odds for a competition and update DB cache."""
-    sport_key = COMPETITION_SPORT_MAP.get(competition_code)
-    if not sport_key:
-        return 0
+def _persist_odds_events(candidate_predictions, odds_data):
+    """Match provider events unambiguously and persist their available markets."""
+    prediction_map = {}
+    for prediction in candidate_predictions:
+        key = (
+            normalize_team_lookup_key(prediction.home_team),
+            normalize_team_lookup_key(prediction.away_team),
+        )
+        prediction_map.setdefault(key, []).append(prediction)
 
-    odds_data = fetch_odds(sport_key)
     saved_count = 0
+    for game in odds_data or []:
+        home = game.get("home_team") or game.get("home")
+        away = game.get("away_team") or game.get("away")
+        if not home or not away:
+            continue
+
+        home_key = normalize_team_lookup_key(home)
+        away_key = normalize_team_lookup_key(away)
+        candidates = prediction_map.get((home_key, away_key), [])
+        reversed_order = False
+        if not candidates:
+            candidates = prediction_map.get((away_key, home_key), [])
+            reversed_order = bool(candidates)
+
+        # Duplicate team pairs are ambiguous; never attach prices to an arbitrary row.
+        if len(candidates) != 1:
+            continue
+
+        odds = merge_odds_from_bookmakers(game)
+        if reversed_order:
+            odds["home"], odds["away"] = odds.get("away"), odds.get("home")
+            sources = odds.get("market_sources") or {}
+            if "home" in sources or "away" in sources:
+                sources = dict(sources)
+                sources["home"], sources["away"] = sources.get("away"), sources.get("home")
+                odds["market_sources"] = sources
+
+        if not any(
+            odds.get(key) is not None
+            for key in ("home", "draw", "away", "over25", "under25", "btts_yes", "btts_no")
+        ):
+            continue
+
+        upsert_match_odds(candidates[0], odds, bookmaker=odds.get("bookmaker"))
+        saved_count += 1
+
+    return saved_count
+
+
+def update_odds_in_db(competition_code, match_dates=None):
+    """Refresh odds from The Odds API and the date-scoped API-Football fallback."""
     prediction_filters = {"competition": competition_code}
     if match_dates:
         prediction_filters["match_date__in"] = list(match_dates)
@@ -477,25 +559,30 @@ def update_odds_in_db(competition_code, match_dates=None):
     candidate_predictions = list(
         MatchPrediction.objects.filter(**prediction_filters).order_by("match_date", "id")
     )
-    prediction_map = {
-        (normalize_team_lookup_key(p.home_team), normalize_team_lookup_key(p.away_team)): p
-        for p in candidate_predictions
-    }
+    if not candidate_predictions:
+        return 0
 
-    for game in odds_data:
-        home, away = game["home_team"], game["away_team"]
-        odds = merge_odds_from_bookmakers(game)
-        prediction = prediction_map.get(
-            (normalize_team_lookup_key(home), normalize_team_lookup_key(away))
-        )
-        if not prediction:
-            continue
-        if any(
-            odds.get(market_key) is not None
-            for market_key in ("home", "draw", "away", "over25", "under25", "btts_yes", "btts_no")
-        ):
-            upsert_match_odds(prediction, odds, bookmaker=odds.get("bookmaker"))
-            saved_count += 1
+    sport_key = COMPETITION_SPORT_MAP.get(competition_code)
+    odds_data = fetch_odds(sport_key) if sport_key else []
+    saved_count = _persist_odds_events(candidate_predictions, odds_data)
+
+    # API-Football's odds endpoint is date-scoped and returns fixtures across
+    # competitions. Limit this integration to the African leagues whose
+    # primary fixture feeds are FKF and NPFL; competition/date/team matching
+    # prevents prices from leaking onto another league's predictions.
+    if competition_code in {"KEN", "NGA"}:
+        predictions_by_date = {}
+        for prediction in candidate_predictions:
+            predictions_by_date.setdefault(prediction.match_date, []).append(prediction)
+
+        for match_date, date_predictions in predictions_by_date.items():
+            fallback_events = fetch_odds_for_date(
+                odds_api_key="",
+                sport_key=None,
+                match_date=match_date.isoformat(),
+            )
+            saved_count += _persist_odds_events(date_predictions, fallback_events)
+
     return saved_count
 
 
@@ -511,9 +598,10 @@ def refresh_competition_odds(competition_code, force=False, match_dates=None):
 
 
 def update_all_odds():
-    """Fetch and update odds for ALL competitions in COMPETITION_SPORT_MAP"""
+    """Refresh primary-feed competitions plus African API-Football odds leagues."""
     total_saved = 0
-    for comp in COMPETITION_SPORT_MAP.keys():
+    competitions = list(COMPETITION_SPORT_MAP) + ["KEN", "NGA"]
+    for comp in competitions:
         total_saved += update_odds_in_db(comp)
     return total_saved
 
