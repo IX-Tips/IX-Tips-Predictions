@@ -40,7 +40,7 @@ _DATE_RE = re.compile(
 _ROUND_RE = re.compile(r"^\s*Round\s+\d+", re.I)
 _MATCH_RE = re.compile(
     r"^\s*(?P<home>.+?)\s{2,}"
-    r"(?P<score>\d+\s*-\s*\d+|-)\s{2,}(?P<away>.+?)\s*$"
+    r"(?P<score>\d+\s*-\s*\d+|-)\s+(?P<away>.+?)\s*$"
 )
 
 
