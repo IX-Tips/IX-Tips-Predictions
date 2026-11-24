@@ -60,8 +60,8 @@ def provider_configuration(provider, competition_code):
     if provider == "OF":
         return supports_openfootball(competition_code), "OpenFootball CC0 public-domain data; no key required"
     if provider == "RSSSF":
-        from .rsssf import RSSSF_COMPETITIONS
-        return str(competition_code or "").upper() in RSSSF_COMPETITIONS, "RSSSF public current-season fixtures; no key required"
+        from .providers import supports_rsssf
+        return supports_rsssf(competition_code), "RSSSF_SOURCE_ENABLED (requires documented permission)"
     if provider == "NPFL":
         from .providers import supports_npfl
         return supports_npfl(competition_code), "NPFL public fixtures; no key required"
@@ -404,11 +404,10 @@ def fetch_upcoming_fixture_groups(api_key, competition_code, days_ahead=45):
             bulk_provider = "NPFL"
             from .npfl import current_matches
             season_matches = current_matches(competition_code)
-        elif primary == "RSSSF":
-            from .rsssf import RSSSF_COMPETITIONS, current_matches
-            if str(competition_code or "").upper() in RSSSF_COMPETITIONS:
-                bulk_provider = "RSSSF"
-                season_matches = current_matches(competition_code)
+        elif primary == "RSSSF" and providers.supports_rsssf(competition_code):
+            from .rsssf import current_matches
+            bulk_provider = "RSSSF"
+            season_matches = current_matches(competition_code)
 
         if bulk_provider:
             candidate_dates = sorted({
