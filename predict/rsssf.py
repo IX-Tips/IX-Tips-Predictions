@@ -111,7 +111,7 @@ def parse_rsssf_text(content, competition_code, season_year):
     first_round = next(
         (
             index for index, line in enumerate(lines)
-            if re.match(r"^\\s*Round\\s+1\\b", line, re.I)
+            if re.match(r"^\s*Round\s+1\b", line, re.I)
         ),
         None,
     )
