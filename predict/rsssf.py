@@ -35,7 +35,7 @@ _MONTHS = {name: number for number, name in enumerate(
 _DATE_RE = re.compile(r"\[(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{1,2})\]", re.I)
 _MATCH_RE = re.compile(
     r"^\s{2,}(?P<home>.+?)\s{2,}"
-    r"(?P<score>\d+\s*-\s*\d+|-)\s{2,}(?P<away>.+?)\s*$"
+    r"(?P<score>\\d+\\s*-\\s*\\d+|-)\\s+(?P<away>.+?)\s*$"
 )
 
 
