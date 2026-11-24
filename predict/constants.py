@@ -88,7 +88,10 @@ COMPETITIONS = {
     "NGA": "Nigeria Professional Football League", "RWA": "Rwanda Premier League",
     "SEN": "Senegal Ligue 1", "ZAF": "South African Premiership",
     "TZA": "Tanzania Premier League", "UGA": "Uganda Premier League",
-    "ZMB": "Zambia Super League", "ZWE": "Zimbabwe Premier Soccer League"
+    "ZMB": "Zambia Super League", "ZWE": "Zimbabwe Premier Soccer League",
+    "ANG": "Angola Girabola", "BEN": "Benin Ligue Pro",
+    "BFA": "Burkina Faso Ligue 1", "BDI": "Burundi Ligue A",
+    "LBR": "Liberia First Division", "MTN": "Mauritania Ligue 1"
 }
 
 # Which provider serves each competition. Anything not listed defaults to "FD".
