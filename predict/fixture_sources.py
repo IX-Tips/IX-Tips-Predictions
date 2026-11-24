@@ -32,6 +32,9 @@ try:
     FIXTURE_PROVIDER_ORDER = json.loads(os.getenv("FIXTURE_PROVIDER_ORDER", "{}"))
     if not isinstance(FIXTURE_PROVIDER_ORDER, dict):
         FIXTURE_PROVIDER_ORDER = {}
+    # Uganda's OpenFootball current-season feed is incomplete; use RSSSF as
+    # a date-level fallback without changing its historical-data provider.
+    FIXTURE_PROVIDER_ORDER.setdefault("UGA", ["OF", "RSSSF"])
 except (TypeError, ValueError, json.JSONDecodeError):
     logger.exception("Invalid FIXTURE_PROVIDER_ORDER JSON; using primary providers")
     FIXTURE_PROVIDER_ORDER = {}
