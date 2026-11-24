@@ -24,6 +24,7 @@ RSSSF_COMPETITIONS = {
     "BDI": {"directory": "b", "slug": "buru"},
     "LBR": {"directory": "l", "slug": "liber"},
     "MTN": {"directory": "m", "slug": "maur"},
+    "UGA": {"directory": "o", "slug": "oeg"},
 }
 
 BASE_URL = "https://www.rsssf.org"
