@@ -2526,7 +2526,7 @@ def fetch_odds_for_date(
     """
     primary_data = []
     primary_key = odds_api_key or ODDS_API_KEY
-    if primary_key and ODDS_PROVIDER == "the-odds-api":
+    if primary_key and sport_key and ODDS_PROVIDER == "the-odds-api":
         url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds"
         params = {
             "apiKey": primary_key,
