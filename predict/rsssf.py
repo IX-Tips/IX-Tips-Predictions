@@ -104,7 +104,30 @@ def parse_rsssf_text(content, competition_code, season_year):
     matches = []
     seen = set()
 
-    for raw_line in _plain_text(content).splitlines():
+    lines = _plain_text(content).splitlines()
+
+    # RSSSF pages place current-season fixtures between Round 1 and Table:.
+    # Exclude standings and page navigation so they cannot become fake matches.
+    first_round = next(
+        (
+            index for index, line in enumerate(lines)
+            if re.match(r"^\\s*Round\\s+1\\b", line, re.I)
+        ),
+        None,
+    )
+    if first_round is None:
+        return []
+
+    table_end = next(
+        (
+            index for index in range(first_round + 1, len(lines))
+            if lines[index].strip().casefold() == "table:"
+        ),
+        len(lines),
+    )
+    lines = lines[first_round:table_end]
+
+    for raw_line in lines:
         line = raw_line.rstrip()
         date_match = _DATE_RE.search(line)
 
@@ -171,7 +194,7 @@ def fetch_matches_by_season(competition_code, season_year):
     if not url:
         return []
 
-    cache_key = f"rsssf:season:v2:{code}:{int(season_year)}"
+    cache_key = f"rsssf:season:v3:{code}:{int(season_year)}"
     cached = _safe_cache_get(cache_key)
     if cached is not None:
         return cached
@@ -182,7 +205,8 @@ def fetch_matches_by_season(competition_code, season_year):
             matches = []
         else:
             response.raise_for_status()
-            matches = parse_rsssf_text(response.text, code, season_year)
+            html = response.content.decode("windows-1252", errors="replace")
+            matches = parse_rsssf_text(html, code, season_year)
     except Exception as exc:
         logger.warning("RSSSF fixture fetch failed for %s season=%s: %s", code, season_year, exc)
         matches = []
