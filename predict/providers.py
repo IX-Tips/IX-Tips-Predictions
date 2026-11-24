@@ -109,6 +109,7 @@ _PROVIDER_DISPATCH = {
     "OF": {},
     "NPFL": {},
     "FKF": {},
+    "RSSSF": {},
 }
 
 
