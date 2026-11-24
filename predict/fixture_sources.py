@@ -404,6 +404,11 @@ def fetch_upcoming_fixture_groups(api_key, competition_code, days_ahead=45):
             bulk_provider = "NPFL"
             from .npfl import current_matches
             season_matches = current_matches(competition_code)
+        elif primary == "RSSSF":
+            from .rsssf import RSSSF_COMPETITIONS, current_matches
+            if str(competition_code or "").upper() in RSSSF_COMPETITIONS:
+                bulk_provider = "RSSSF"
+                season_matches = current_matches(competition_code)
 
         if bulk_provider:
             candidate_dates = sorted({
