@@ -1,5 +1,9 @@
+import os
 from datetime import date
 from unittest import TestCase
+from unittest.mock import patch
+
+from predict.providers import supports_rsssf
 
 from predict.constants import COMPETITIONS, COMPETITION_PROVIDERS
 from predict.rsssf import (
@@ -92,6 +96,13 @@ Round 1
         matches = parse_rsssf_text(source, "ANG", 2026)
         self.assertEqual(len(matches), 1)
         self.assertEqual(matches[0]["utcDate"], "2026-10-25")
+
+    def test_rsssf_source_is_disabled_unless_explicitly_enabled(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(supports_rsssf("ANG"))
+        with patch.dict(os.environ, {"RSSSF_SOURCE_ENABLED": "true"}):
+            self.assertTrue(supports_rsssf("ANG"))
+            self.assertFalse(supports_rsssf("KEN"))
 
     def test_six_rsssf_competitions_are_registered(self):
         expected = {"ANG", "BEN", "BFA", "BDI", "LBR", "MTN"}
