@@ -28,6 +28,21 @@ SE_FIXTURE_TTL = 60 * 60 * 3
 
 # These exact aliases are based on the published Football Charts league slugs.
 _FC_SLUG_OVERRIDES = {"ALG": "algir1", "EGY": "egypt", "MAR": "morocco"}
+_FC_NAME_ALIASES = {
+    "ANG": "Girabola", "BEN": "Ligue Pro", "BFA": "Ligue 1", "BDI": "Ligue A",
+    "GHA": "Premier League", "KEN": "FKF Premier League", "LBR": "First Division",
+    "MWI": "Super League", "MTN": "Ligue 1", "NGA": "NPFL",
+    "RWA": "Premier League", "SEN": "Ligue 1", "ZAF": "Premiership",
+    "TZA": "Ligi Kuu Bara", "UGA": "Premier League", "ZMB": "Super League",
+    "ZWE": "Premier Soccer League",
+}
+_FC_COUNTRIES = {
+    "ANG": "Angola", "BEN": "Benin", "BFA": "Burkina Faso", "BDI": "Burundi",
+    "GHA": "Ghana", "KEN": "Kenya", "LBR": "Liberia", "MWI": "Malawi",
+    "MTN": "Mauritania", "NGA": "Nigeria", "RWA": "Rwanda", "SEN": "Senegal",
+    "ZAF": "South Africa", "TZA": "Tanzania", "UGA": "Uganda",
+    "ZMB": "Zambia", "ZWE": "Zimbabwe",
+}
 # SportsEvents24 uses ISO-3166 alpha-2 country filters. Keep this restricted
 # to competitions in the African coverage set; do not guess country codes.
 _SE_COUNTRIES = {
@@ -79,11 +94,16 @@ def _fc_league_slug(competition_code):
     catalog = _fc_catalog()
     if override:
         return override if any(str(x.get("league")) == override for x in catalog) else None
-    wanted = _norm(COMPETITIONS.get(code))
-    matches = [x for x in catalog if _norm(x.get("name")) == wanted]
+    wanted = _norm(_FC_NAME_ALIASES.get(code) or COMPETITIONS.get(code))
+    expected_country = _norm(_FC_COUNTRIES.get(code))
+    matches = [
+        x for x in catalog
+        if _norm(x.get("name")) == wanted
+        and (not expected_country or _norm(x.get("country")) == expected_country)
+    ]
     if len(matches) == 1:
         return matches[0].get("league")
-    # Country + exact normalized competition title prevents ambiguous matches.
+    # Never guess between similarly named leagues in different countries.
     return None
 
 def _parse_fc_match(item, competition_code):
@@ -110,7 +130,8 @@ def _parse_fc_match(item, competition_code):
     return {"id": f"FC-{stable}", "utcDate": kickoff, "status": status,
             "homeTeam": {"name": home, "crest": None},
             "awayTeam": {"name": away, "crest": None},
-            "score": {"fullTime": {"home": None, "away": None}}}
+            "score": {"fullTime": {"home": None, "away": None}},
+            "attribution": "Data by football-charts.com"}
 
 @_register(providers=["FC"], operation="fetch_matches_by_date")
 def football_charts_fetch_matches_by_date(competition_code, match_date):
@@ -168,7 +189,9 @@ def _se_tournament_id(competition_code):
     rows = _se_tournaments(country)
     candidates = []
     for row in rows:
-        title = row.get("name") or row.get("tournament") or row.get("title")
+        title = row.get("name") or row.get("tournament") or row.get("title") or row.get("tournamentName") or row.get("tournament_name")
+        if isinstance(title, dict):
+            title = title.get("name") or title.get("title")
         if _norm(title) == wanted:
             candidates.append(row)
     if len(candidates) == 1:
@@ -177,8 +200,10 @@ def _se_tournament_id(competition_code):
     return None
 
 def _parse_se_event(item, competition_code):
-    home = str(item.get("teamHome") or "").strip()
-    away = str(item.get("teamAway") or "").strip()
+    home_value = item.get("teamHome") or ""
+    away_value = item.get("teamAway") or ""
+    home = str(home_value.get("name") if isinstance(home_value, dict) else home_value).strip()
+    away = str(away_value.get("name") if isinstance(away_value, dict) else away_value).strip()
     starts = item.get("startsAt")
     if not home or not away or not starts:
         return None
