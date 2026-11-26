@@ -120,7 +120,7 @@ def _parse_fc_match(item, competition_code):
         logger.info("Football Charts has no unambiguous league mapping for %s", competition_code)
         return []
     day = date.fromisoformat(str(match_date)[:10])
-    cache_key = f"football_charts_fixtures_v1::{slug}::{day.isoformat()}"
+    cache_key = f"football_charts_fixtures_v1::{slug}"
     cached = cache.get(cache_key)
     if cached is not None:
         return cached
@@ -216,13 +216,19 @@ def _parse_se_event(item, competition_code):
     today = date.today()
     if day < today - timedelta(days=7) or day > today + timedelta(days=30):
         return []
-    key = f"sportsevents_fixtures_v1::{tournament_id}::{day.isoformat()}"
+    if day >= today:
+        window_start = today
+        window_end = min(today + timedelta(days=7), today + timedelta(days=30))
+    else:
+        window_start = day
+        window_end = day + timedelta(days=1)
+    key = f"sportsevents_fixtures_v1::{tournament_id}::{window_start.isoformat()}::{window_end.isoformat()}"
     cached = cache.get(key)
     if cached is not None:
-        return cached
+        return [match for match in cached if (match.get("utcDate") or "")[:10] == day.isoformat()]
     payload = _get_json(f"{SE_BASE_URL}/events", params={
-        "tournament_id": tournament_id, "from": day.isoformat(),
-        "to": (day + timedelta(days=1)).isoformat(), "limit": 100,
+        "tournament_id": tournament_id, "from": window_start.isoformat(),
+        "to": window_end.isoformat(), "limit": 100,
     })
     rows = payload.get("data")
     if not isinstance(rows, list):
@@ -233,4 +239,4 @@ def _parse_se_event(item, competition_code):
         if parsed and (parsed.get("utcDate") or "")[:10] == day.isoformat():
             matches.append(parsed)
     cache.set(key, matches, timeout=SE_FIXTURE_TTL)
-    return matches
+    return [match for match in matches if (match.get("utcDate") or "")[:10] == day.isoformat()]
