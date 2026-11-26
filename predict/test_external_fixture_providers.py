@@ -74,3 +74,22 @@ class ExternalFixtureProviderTests(TestCase):
         with self.assertRaisesRegex(RuntimeError, "429"):
             sportsevents_fetch_matches_by_date("KEN", day)
         cache_set.assert_not_called()
+
+
+class ExternalProviderRoutingTests(TestCase):
+    @patch("predict.fixture_sources.FIXTURE_PROVIDER_ORDER", {})
+    @patch("predict.fixture_sources.get_provider", return_value="FKF")
+    @patch("predict.fixture_sources.AF_KEY", "")
+    @patch("predict.fixture_sources.supports_open_matchday", return_value=False)
+    @patch("predict.external_fixture_providers.supports_football_charts", return_value=True)
+    @patch("predict.external_fixture_providers.supports_sportsevents", return_value=True)
+    def test_existing_primary_then_football_charts_then_sportsevents(
+        self, supports_se, supports_fc, supports_om, af_key, primary, order
+    ):
+        from predict.fixture_sources import _provider_order
+        self.assertEqual(_provider_order("KEN"), ["FKF", "FC", "SE"])
+
+    def test_fixture_handlers_are_registered(self):
+        from predict.providers import _PROVIDER_DISPATCH
+        self.assertTrue(callable(_PROVIDER_DISPATCH["FC"].get("fetch_matches_by_date")))
+        self.assertTrue(callable(_PROVIDER_DISPATCH["SE"].get("fetch_matches_by_date")))
