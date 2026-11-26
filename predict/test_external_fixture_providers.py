@@ -56,7 +56,7 @@ class ExternalFixtureProviderTests(TestCase):
         {"league": "algir1", "name": "Ligue 1"}
     ])
     def test_football_charts_api_errors_are_not_cached_as_empty(
-        self, catalog, cache_set, cache_get, get_json
+        self, get_json, cache_get, cache_set, catalog
     ):
         with self.assertRaisesRegex(RuntimeError, "429"):
             football_charts_fetch_matches_by_date("ALG", "2026-11-27")
