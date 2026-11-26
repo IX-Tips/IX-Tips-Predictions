@@ -269,15 +269,14 @@ def _provider_order(competition_code):
         if provider in {"FD", "UK", "LF", "AF", "OM", "OF", "NPFL", "FKF", "RSSSF", "FC", "SE"} and provider not in providers:
             providers.append(provider)
 
-    # API-Football is an independent fallback only when both its key and
-    # competition league ID are configured. It never replaces the primary.
-    if AF_KEY and (competition_code in APIFOOTBALL_LEAGUE_IDS or competition_code in APIFOOTBALL_LEAGUE_SEARCH) and "AF" not in providers:
-        providers.append("AF")
     # Football Charts is the first external fallback after the configured source.
     # It is only attempted when the user has supplied an API key.
     from .external_fixture_providers import supports_football_charts, supports_sportsevents
     if supports_football_charts(competition_code) and "FC" not in providers:
         providers.append("FC")
+    # API-Football remains a secondary fallback, after Football Charts.
+    if AF_KEY and (competition_code in APIFOOTBALL_LEAGUE_IDS or competition_code in APIFOOTBALL_LEAGUE_SEARCH) and "AF" not in providers:
+        providers.append("AF")
     # Keep Open Matchday as an existing fallback where configured.
     if supports_open_matchday(competition_code) and "OM" not in providers:
         providers.append("OM")
