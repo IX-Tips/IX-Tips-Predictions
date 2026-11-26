@@ -112,7 +112,8 @@ def _parse_fc_match(item, competition_code):
             "awayTeam": {"name": away, "crest": None},
             "score": {"fullTime": {"home": None, "away": None}}}
 
-@_register(providers=["FC"], operation="fetch_matches_by_date")\ndef football_charts_fetch_matches_by_date(competition_code, match_date):
+@_register(providers=["FC"], operation="fetch_matches_by_date")
+def football_charts_fetch_matches_by_date(competition_code, match_date):
     if not supports_football_charts(competition_code):
         return []
     slug = _fc_league_slug(competition_code)
@@ -202,7 +203,8 @@ def _parse_se_event(item, competition_code):
             "awayTeam": {"name": away, "crest": None},
             "score": {"fullTime": {"home": home_goals, "away": away_goals}}}
 
-@_register(providers=["SE"], operation="fetch_matches_by_date")\ndef sportsevents_fetch_matches_by_date(competition_code, match_date):
+@_register(providers=["SE"], operation="fetch_matches_by_date")
+def sportsevents_fetch_matches_by_date(competition_code, match_date):
     if not supports_sportsevents(competition_code):
         return []
     tournament_id = _se_tournament_id(competition_code)
