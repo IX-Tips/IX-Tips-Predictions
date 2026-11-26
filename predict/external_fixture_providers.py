@@ -22,9 +22,9 @@ FC_BASE_URL = os.environ.get("FOOTBALL_CHARTS_BASE_URL", "https://api.football-c
 FC_KEY = os.environ.get("FOOTBALL_CHARTS_API_KEY") or os.environ.get("FC_API_KEY", "")
 SE_BASE_URL = os.environ.get("SPORTEVENTS_BASE_URL", "https://sportsevents24.com/api/v1").rstrip("/")
 FC_CATALOG_TTL = 60 * 60 * 24
-FC_FIXTURE_TTL = 60 * 60 * 4
+FC_FIXTURE_TTL = 60 * 60 * 23
 SE_TOURNAMENT_TTL = 60 * 60 * 24
-SE_FIXTURE_TTL = 60 * 60 * 3
+SE_FIXTURE_TTL = 60 * 60 * 8
 
 # These exact aliases are based on the published Football Charts league slugs.
 _FC_SLUG_OVERRIDES = {"ALG": "algir1", "EGY": "egypt", "MAR": "morocco"}
@@ -153,7 +153,7 @@ def football_charts_fetch_matches_by_date(competition_code, match_date):
             parsed for parsed in (_parse_fc_match(row, competition_code) for row in rows)
             if parsed
         ]
-        # Cache the complete upcoming window, not a single requested day.
+        # Cache the complete upcoming window for almost a day: Football Charts refreshes its feed daily and the free account is limited to 200 calls/day.
         cache.set(cache_key, cached, timeout=FC_FIXTURE_TTL)
     return [match for match in cached if (match.get("utcDate") or "")[:10] == day.isoformat()]
 
@@ -262,7 +262,8 @@ def sportsevents_fetch_matches_by_date(competition_code, match_date):
         parsed for parsed in (_parse_se_event(row, competition_code) for row in rows)
         if parsed
     ]
-    # Cache the complete seven-day window so one tournament costs one request
-    # per refresh rather than one request for every calendar day.
+    # Cache the complete seven-day window for eight hours. This keeps the combined
+    # tournament-discovery and fixture calls below the 100-request daily cap
+    # for the supported African competitions.
     cache.set(key, matches, timeout=SE_FIXTURE_TTL)
     return [match for match in matches if (match.get("utcDate") or "")[:10] == day.isoformat()]
