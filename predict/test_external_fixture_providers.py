@@ -34,32 +34,33 @@ class ExternalFixtureProviderTests(TestCase):
         self.assertEqual(match["status"], "FINISHED")
         self.assertEqual(match["score"]["fullTime"], {"home": 2, "away": 1})
 
-    @patch("predict.external_fixture_providers.cache.get", return_value=None)
-    @patch("predict.external_fixture_providers._fc_catalog", return_value=[
-        {"league": "algir1", "name": "Ligue 1", "country": "Algeria"}
-    ])
-    def test_algeria_football_charts_mapping_uses_verified_slug(self, catalog, cache_get):
-        from predict.external_fixture_providers import _fc_league_slug
-        self.assertEqual(_fc_league_slug("ALG"), "algir1")
+    def test_algeria_football_charts_mapping_uses_verified_slug(self):
+        with patch("predict.external_fixture_providers._fc_catalog", return_value=[
+            {"league": "algir1", "name": "Ligue 1", "country": "Algeria"}
+        ]):
+            from predict.external_fixture_providers import _fc_league_slug
+            self.assertEqual(_fc_league_slug("ALG"), "algir1")
 
     @patch("predict.external_fixture_providers._se_tournaments", return_value=[
         {"id": 11, "name": "FKF Premier League"}
     ])
-    def test_kenya_sportsevents_mapping_is_exact(self, tournaments):
-        self.assertEqual(_se_tournament_id("KEN"), 11)
+    def test_kenya_sportsevents_mapping_is_not_enabled(self, tournaments):
+        from predict.external_fixture_providers import supports_sportsevents
+        self.assertFalse(supports_sportsevents("KEN"))
+        tournaments.assert_not_called()
 
-    @patch("predict.external_fixture_providers._get_json", side_effect=RuntimeError("429 quota"))
     @patch("predict.external_fixture_providers.cache.get", return_value=None)
     @patch("predict.external_fixture_providers.cache.set")
-    @patch("predict.external_fixture_providers.FC_KEY", "test-key")
     @patch("predict.external_fixture_providers._fc_catalog", return_value=[
         {"league": "algir1", "name": "Ligue 1"}
     ])
+    @patch("predict.external_fixture_providers._get_json", side_effect=RuntimeError("429 quota"))
     def test_football_charts_api_errors_are_not_cached_as_empty(
-        self, get_json, cache_get, cache_set, catalog
+        self, get_json, catalog, cache_set, cache_get
     ):
-        with self.assertRaisesRegex(RuntimeError, "429"):
-            football_charts_fetch_matches_by_date("ALG", "2026-11-27")
+        with patch("predict.external_fixture_providers.FC_KEY", "test-key"):
+            with self.assertRaisesRegex(RuntimeError, "429"):
+                football_charts_fetch_matches_by_date("ALG", "2026-11-27")
         cache_set.assert_not_called()
 
     @patch("predict.external_fixture_providers.cache.get", return_value=None)
@@ -72,22 +73,34 @@ class ExternalFixtureProviderTests(TestCase):
         from datetime import date, timedelta
         day = (date.today() + timedelta(days=1)).isoformat()
         with self.assertRaisesRegex(RuntimeError, "429"):
-            sportsevents_fetch_matches_by_date("KEN", day)
+            sportsevents_fetch_matches_by_date("ALG", day)
         cache_set.assert_not_called()
 
 
 class ExternalProviderRoutingTests(TestCase):
-    @patch("predict.fixture_sources.FIXTURE_PROVIDER_ORDER", {})
-    @patch("predict.fixture_sources.get_provider", return_value="FKF")
-    @patch("predict.fixture_sources.AF_KEY", "")
-    @patch("predict.fixture_sources.supports_open_matchday", return_value=False)
-    @patch("predict.external_fixture_providers.supports_football_charts", return_value=True)
-    @patch("predict.external_fixture_providers.supports_sportsevents", return_value=True)
-    def test_existing_primary_then_football_charts_then_sportsevents(
-        self, supports_se, supports_fc, supports_om, af_key, primary, order
-    ):
+    def test_existing_primary_then_football_charts_then_sportsevents(self):
         from predict.fixture_sources import _provider_order
-        self.assertEqual(_provider_order("KEN"), ["FKF", "FC", "SE"])
+        with patch("predict.fixture_sources.FIXTURE_PROVIDER_ORDER", {}), \
+             patch("predict.fixture_sources.get_provider", return_value="OF"), \
+             patch("predict.fixture_sources.AF_KEY", ""), \
+             patch("predict.fixture_sources.supports_open_matchday", return_value=False), \
+             patch("predict.external_fixture_providers.supports_football_charts", return_value=True), \
+             patch("predict.external_fixture_providers.supports_sportsevents", return_value=True):
+            self.assertEqual(_provider_order("ALG"), ["OF", "FC", "SE"])
+
+    def test_existing_kenya_uganda_nigeria_sources_are_not_replaced(self):
+        from predict.fixture_sources import _provider_order
+        with patch("predict.fixture_sources.FIXTURE_PROVIDER_ORDER", {}), \
+             patch("predict.fixture_sources.get_provider", side_effect=lambda code: {
+                 "KEN": "FKF", "UGA": "OF", "NGA": "NPFL"
+             }[code]), \
+             patch("predict.fixture_sources.AF_KEY", ""), \
+             patch("predict.fixture_sources.supports_open_matchday", return_value=False), \
+             patch("predict.external_fixture_providers.supports_football_charts", return_value=False), \
+             patch("predict.external_fixture_providers.supports_sportsevents", return_value=False):
+            self.assertEqual(_provider_order("KEN"), ["FKF"])
+            self.assertEqual(_provider_order("UGA"), ["OF"])
+            self.assertEqual(_provider_order("NGA"), ["NPFL"])
 
     def test_fixture_handlers_are_registered(self):
         from predict.providers import _PROVIDER_DISPATCH
