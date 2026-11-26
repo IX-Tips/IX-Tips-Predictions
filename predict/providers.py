@@ -110,6 +110,8 @@ _PROVIDER_DISPATCH = {
     "NPFL": {},
     "FKF": {},
     "RSSSF": {},
+    "FC": {},
+    "SE": {},
 }
 
 
@@ -1319,3 +1321,7 @@ def fd_fetch_teams(competition_code):
 def fd_fetch_scorers(competition_code):
     data = _fd_get(f"competitions/{competition_code}/scorers")
     return data.get("scorers", []) or []
+
+
+# Register optional upcoming-fixture-only external sources after core adapters load.
+from . import external_fixture_providers as _external_fixture_providers  # noqa: E402,F401

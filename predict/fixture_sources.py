@@ -76,6 +76,12 @@ def provider_configuration(provider, competition_code):
     if provider == "RSSSF":
         from .providers import supports_rsssf
         return supports_rsssf(competition_code), "RSSSF_SOURCE_ENABLED (requires documented permission)"
+    if provider == "FC":
+        from .external_fixture_providers import supports_football_charts
+        return supports_football_charts(competition_code), "FOOTBALL_CHARTS_API_KEY"
+    if provider == "SE":
+        from .external_fixture_providers import supports_sportsevents
+        return supports_sportsevents(competition_code), "SportsEvents24 public API; no key required"
     if provider == "NPFL":
         from .providers import supports_npfl
         return supports_npfl(competition_code), "NPFL public fixtures; no key required"
@@ -260,16 +266,23 @@ def _provider_order(competition_code):
     providers = []
     for provider in configured:
         provider = str(provider).strip().upper()
-        if provider in {"FD", "UK", "LF", "AF", "OM", "OF", "NPFL", "FKF", "RSSSF"} and provider not in providers:
+        if provider in {"FD", "UK", "LF", "AF", "OM", "OF", "NPFL", "FKF", "RSSSF", "FC", "SE"} and provider not in providers:
             providers.append(provider)
 
-    # API-Football is an independent fallback only when both its key and
-    # competition league ID are configured. It never replaces the primary.
+    # Football Charts is the first external fallback after the configured source.
+    # It is only attempted when the user has supplied an API key.
+    from .external_fixture_providers import supports_football_charts, supports_sportsevents
+    if supports_football_charts(competition_code) and "FC" not in providers:
+        providers.append("FC")
+    # API-Football remains a secondary fallback, after Football Charts.
     if AF_KEY and (competition_code in APIFOOTBALL_LEAGUE_IDS or competition_code in APIFOOTBALL_LEAGUE_SEARCH) and "AF" not in providers:
         providers.append("AF")
-    # The public open-matchday feed is last so existing provider data wins.
+    # Keep Open Matchday as an existing fallback where configured.
     if supports_open_matchday(competition_code) and "OM" not in providers:
         providers.append("OM")
+    # SportsEvents24 is the final fallback for the African competition set.
+    if supports_sportsevents(competition_code) and "SE" not in providers:
+        providers.append("SE")
     return providers
 
 
