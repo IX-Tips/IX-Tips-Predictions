@@ -122,20 +122,18 @@ def _parse_fc_match(item, competition_code):
     day = date.fromisoformat(str(match_date)[:10])
     cache_key = f"football_charts_fixtures_v1::{slug}"
     cached = cache.get(cache_key)
-    if cached is not None:
-        return cached
-    payload = _get_json(f"{FC_BASE_URL}/leagues/{slug}/fixtures/", headers=_fc_headers())
-    rows = payload.get("matches")
-    if not isinstance(rows, list):
-        raise ValueError(f"Football Charts fixtures response malformed for {slug}")
-    matches = []
-    for row in rows:
-        parsed = _parse_fc_match(row, competition_code)
-        if parsed and (parsed.get("utcDate") or "")[:10] == day.isoformat():
-            matches.append(parsed)
-    # Cache only a valid response; transport/API errors bubble to diagnostics.
-    cache.set(cache_key, matches, timeout=FC_FIXTURE_TTL)
-    return matches
+    if cached is None:
+        payload = _get_json(f"{FC_BASE_URL}/leagues/{slug}/fixtures/", headers=_fc_headers())
+        rows = payload.get("matches")
+        if not isinstance(rows, list):
+            raise ValueError(f"Football Charts fixtures response malformed for {slug}")
+        cached = [
+            parsed for parsed in (_parse_fc_match(row, competition_code) for row in rows)
+            if parsed
+        ]
+        # Cache the complete upcoming window, not a single requested day.
+        cache.set(cache_key, cached, timeout=FC_FIXTURE_TTL)
+    return [match for match in cached if (match.get("utcDate") or "")[:10] == day.isoformat()]
 
 def _se_tournaments(country):
     key = f"sportsevents_tournaments_v1::{country}"
@@ -233,10 +231,11 @@ def _parse_se_event(item, competition_code):
     rows = payload.get("data")
     if not isinstance(rows, list):
         raise ValueError("SportsEvents24 events response malformed")
-    matches = []
-    for row in rows:
-        parsed = _parse_se_event(row, competition_code)
-        if parsed and (parsed.get("utcDate") or "")[:10] == day.isoformat():
-            matches.append(parsed)
+    matches = [
+        parsed for parsed in (_parse_se_event(row, competition_code) for row in rows)
+        if parsed
+    ]
+    # Cache the complete seven-day window so one tournament costs one request
+    # per refresh rather than one request for every calendar day.
     cache.set(key, matches, timeout=SE_FIXTURE_TTL)
     return [match for match in matches if (match.get("utcDate") or "")[:10] == day.isoformat()]
