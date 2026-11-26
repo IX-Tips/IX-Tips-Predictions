@@ -155,6 +155,19 @@ def _record_af_request_health(state):
         logger.warning("Unable to cache API-Football diagnostics: %s", exc)
 
 
+def _af_request_failed(endpoint):
+    """Return whether the most recent request to an endpoint failed."""
+    try:
+        state = cache.get(f"provider_request_health::AF::{endpoint}")
+    except Exception:
+        return False
+    return bool(
+        state
+        and state.get("endpoint") == endpoint
+        and state.get("status") == "error"
+    )
+
+
 def _af_get(path, params=None):
     """Call API-Football and return the `response` list.
 
@@ -254,6 +267,10 @@ def af_league_id(competition_code, season_year=None):
     if season_year:
         params["season"] = int(season_year)
     rows = _af_get("leagues", params)
+    # Do not cache a failed/plan-restricted lookup as "league not found".
+    if _af_request_failed("leagues"):
+        return None
+
     expected_country = country.casefold()
     expected_name = " ".join(league_name.casefold().split())
     league_id = None
@@ -340,6 +357,10 @@ def _af_fetch_season_matches(competition_code, season_year):
     if cached is not None:
         return cached
     rows = _af_get("fixtures", {"league": league_id, "season": season_year})
+    # A provider error is not a valid empty season. Avoid poisoning the
+    # six-hour fixture cache so the next attempt can recover after access returns.
+    if _af_request_failed("fixtures"):
+        return []
     matches = [_normalize_fixture(fx) for fx in rows]
     # Refresh several times per day so newly announced fixtures appear quickly.
     cache.set(cache_key, matches, timeout=60 * 60 * 6)
