@@ -14,6 +14,7 @@ import requests
 from django.core.cache import cache
 
 from .constants import COMPETITIONS
+from .providers import _register
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,7 @@ def _parse_fc_match(item, competition_code):
             "awayTeam": {"name": away, "crest": None},
             "score": {"fullTime": {"home": None, "away": None}}}
 
-def football_charts_fetch_matches_by_date(competition_code, match_date):
+@_register(providers=["FC"], operation="fetch_matches_by_date")\ndef football_charts_fetch_matches_by_date(competition_code, match_date):
     if not supports_football_charts(competition_code):
         return []
     slug = _fc_league_slug(competition_code)
@@ -148,11 +149,23 @@ def _se_tournaments(country):
     cache.set(key, rows, timeout=SE_TOURNAMENT_TTL)
     return rows
 
+_SE_NAME_ALIASES = {
+    "ALG": "Ligue 1", "ANG": "Girabola", "BEN": "Ligue Pro",
+    "BFA": "Ligue 1", "BDI": "Ligue A", "EGY": "Premier League",
+    "GHA": "Premier League", "KEN": "FKF Premier League",
+    "LBR": "First Division", "MWI": "Super League", "MAR": "Botola Pro",
+    "MTN": "Ligue 1", "NGA": "NPFL", "RWA": "Premier League",
+    "SEN": "Ligue 1", "ZAF": "Premiership", "TZA": "Ligi Kuu Bara",
+    "UGA": "Premier League", "ZMB": "Super League",
+    "ZWE": "Premier Soccer League",
+}
+
 def _se_tournament_id(competition_code):
     country = _SE_COUNTRIES.get(str(competition_code or "").upper())
     if not country:
         return None
-    wanted = _norm(COMPETITIONS.get(str(competition_code).upper()))
+    code = str(competition_code).upper()
+    wanted = _norm(_SE_NAME_ALIASES.get(code) or COMPETITIONS.get(code))
     rows = _se_tournaments(country)
     candidates = []
     for row in rows:
@@ -191,7 +204,7 @@ def _parse_se_event(item, competition_code):
             "awayTeam": {"name": away, "crest": None},
             "score": {"fullTime": {"home": home_goals, "away": away_goals}}}
 
-def sportsevents_fetch_matches_by_date(competition_code, match_date):
+@_register(providers=["SE"], operation="fetch_matches_by_date")\ndef sportsevents_fetch_matches_by_date(competition_code, match_date):
     if not supports_sportsevents(competition_code):
         return []
     tournament_id = _se_tournament_id(competition_code)
