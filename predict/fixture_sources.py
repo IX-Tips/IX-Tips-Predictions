@@ -4,10 +4,12 @@ Multi-provider fixture aggregation.
 Historical match ingestion and upcoming fixture discovery are deliberately
 separate. COMPETITION_PROVIDERS continues to choose the primary source for
 historical data and league metadata. Fixture sources can be configured
-independently with FIXTURE_PROVIDER_ORDER.
+independently with FIXTURE_PROVIDER_ORDER. RSSSF may be enabled as an additive
+fixture source with FIXTURE_PROVIDER_SUPPLEMENTS, subject to its permission gate.
 
 Example:
-    FIXTURE_PROVIDER_ORDER='{"BEL":["UK","AF"],"TUR":["UK","AF"]}'
+    FIXTURE_PROVIDER_ORDER='{"BEL":["UK","AF"]}'
+    FIXTURE_PROVIDER_SUPPLEMENTS='{"UGA":["RSSSF"]}'
 """
 import json
 import logging
@@ -28,16 +30,25 @@ from .constants import APIFOOTBALL_LEAGUE_IDS, APIFOOTBALL_LEAGUE_SEARCH
 
 logger = logging.getLogger(__name__)
 
-try:
-    FIXTURE_PROVIDER_ORDER = json.loads(os.getenv("FIXTURE_PROVIDER_ORDER", "{}"))
-    if not isinstance(FIXTURE_PROVIDER_ORDER, dict):
-        FIXTURE_PROVIDER_ORDER = {}
-    # Uganda's OpenFootball current-season feed is incomplete; use RSSSF as
-    # a date-level fallback without changing its historical-data provider.
-    FIXTURE_PROVIDER_ORDER.setdefault("UGA", ["OF", "RSSSF"])
-except (TypeError, ValueError, json.JSONDecodeError):
-    logger.exception("Invalid FIXTURE_PROVIDER_ORDER JSON; using primary providers")
-    FIXTURE_PROVIDER_ORDER = {}
+def _load_provider_config(environment_name):
+    try:
+        value = json.loads(os.getenv(environment_name, "{}"))
+        return value if isinstance(value, dict) else {}
+    except (TypeError, ValueError, json.JSONDecodeError):
+        logger.exception("Invalid %s JSON; ignoring provider overrides", environment_name)
+        return {}
+
+
+FIXTURE_PROVIDER_ORDER = _load_provider_config("FIXTURE_PROVIDER_ORDER")
+# Supplements are explicit opt-in sources that add fixtures even when the
+# primary provider already returned matches for the date. They are separate
+# from the fallback chain and must be configured deliberately.
+FIXTURE_PROVIDER_SUPPLEMENTS = _load_provider_config("FIXTURE_PROVIDER_SUPPLEMENTS")
+
+# Uganda's OpenFootball current-season feed is incomplete; RSSSF remains a
+# date-level fallback. It becomes a supplement only when explicitly configured
+# in FIXTURE_PROVIDER_SUPPLEMENTS and RSSSF permission/configuration is valid.
+FIXTURE_PROVIDER_ORDER.setdefault("UGA", ["OF", "RSSSF"])
 
 
 
@@ -262,6 +273,34 @@ def _provider_order(competition_code):
     return providers
 
 
+def _supplement_provider_order(competition_code):
+    """Return explicitly configured additive providers for one competition."""
+    configured = FIXTURE_PROVIDER_SUPPLEMENTS.get(competition_code)
+    if isinstance(configured, str):
+        configured = [configured]
+    if not isinstance(configured, (list, tuple)):
+        return []
+
+    # RSSSF is currently the only season-level supplement adapter. Keep this
+    # allowlist narrow so unsupported providers cannot silently appear enabled.
+    allowed = {"RSSSF"}
+    return list(dict.fromkeys(
+        str(provider).strip().upper()
+        for provider in configured
+        if str(provider).strip().upper() in allowed
+    ))
+
+
+def _supplement_season_matches(provider, competition_code):
+    """Fetch season-level candidates for supported additive fixture sources."""
+    if provider == "RSSSF":
+        from .providers import supports_rsssf
+        if supports_rsssf(competition_code):
+            from .rsssf import current_matches
+            return current_matches(competition_code)
+    return []
+
+
 def _team_key(value):
     value = unicodedata.normalize("NFKD", (value or "").casefold())
     value = "".join(char for char in value if not unicodedata.combining(char))
@@ -385,6 +424,7 @@ def fetch_upcoming_fixture_groups(api_key, competition_code, days_ahead=45):
     primary = get_provider(competition_code)
     bulk_provider = None
     season_matches = []
+    supplement_matches = []
 
     try:
         # Bulk discovery must respect the configured primary source. A
@@ -412,27 +452,51 @@ def fetch_upcoming_fixture_groups(api_key, competition_code, days_ahead=45):
             bulk_provider = "RSSSF"
             season_matches = current_matches(competition_code)
 
-        if bulk_provider:
+        # Add dates published by explicitly configured supplement feeds. This
+        # is what lets a secondary season feed reveal dates absent entirely
+        # from the primary season file, while per-date merging below preserves
+        # primary-provider precedence for duplicate fixtures.
+        for supplement in _supplement_provider_order(competition_code):
+            configured, _ = provider_configuration(supplement, competition_code)
+            if not configured:
+                continue
+            try:
+                supplement_matches.extend(
+                    _supplement_season_matches(supplement, competition_code) or []
+                )
+            except Exception as exc:
+                record_provider_diagnostic(
+                    competition_code, supplement, "error",
+                    error=exc, match_date=f"{today.isoformat()}..{last_day.isoformat()}",
+                )
+                logger.warning(
+                    "Supplement season discovery failed for %s via %s: %s",
+                    competition_code, supplement, exc,
+                )
+
+        candidate_pool = [*season_matches, *supplement_matches]
+        if bulk_provider or candidate_pool:
             candidate_dates = sorted({
                 (match.get("utcDate") or "")[:10]
-                for match in season_matches
+                for match in candidate_pool
                 if match.get("status") not in {"FINISHED", "CANCELLED", "POSTPONED"}
                 and (match.get("utcDate") or "")[:10]
                 and today.isoformat() <= (match.get("utcDate") or "")[:10] <= last_day.isoformat()
                 and _fixture_key(match) is not None
             })
-            candidate_count = sum(
-                1 for match in season_matches
-                if match.get("status") not in {"FINISHED", "CANCELLED", "POSTPONED"}
-                and (match.get("utcDate") or "")[:10] in candidate_dates
-                and _fixture_key(match) is not None
-            )
-            record_provider_diagnostic(
-                competition_code, bulk_provider,
-                "fixtures_found" if candidate_count else "empty_response",
-                fixture_count=candidate_count,
-                match_date=f"{today.isoformat()}..{last_day.isoformat()}",
-            )
+            if bulk_provider:
+                candidate_count = sum(
+                    1 for match in season_matches
+                    if match.get("status") not in {"FINISHED", "CANCELLED", "POSTPONED"}
+                    and (match.get("utcDate") or "")[:10] in candidate_dates
+                    and _fixture_key(match) is not None
+                )
+                record_provider_diagnostic(
+                    competition_code, bulk_provider,
+                    "fixtures_found" if candidate_count else "empty_response",
+                    fixture_count=candidate_count,
+                    match_date=f"{today.isoformat()}..{last_day.isoformat()}",
+                )
             grouped = {}
             for match_day in candidate_dates:
                 merged = fetch_fixture_matches_by_date(api_key, competition_code, match_day)
@@ -471,7 +535,9 @@ def fetch_fixture_matches_by_date(api_key, competition_code, match_date):
     helpers; credentials are owned by each provider.
     """
     merged = {}
+    attempted_providers = set()
     for provider in _provider_order(competition_code):
+        attempted_providers.add(provider)
         configured, credential_name = provider_configuration(provider, competition_code)
         if not configured:
             reason = f"{credential_name} is missing, disabled, or not mapped"
@@ -568,6 +634,47 @@ def fetch_fixture_matches_by_date(api_key, competition_code, match_date):
         # this avoids duplicate requests and conflicting provider snapshots.
         if valid_count:
             break
+
+    # Explicit supplements are additive, unlike the fallback chain above.
+    # The primary/fallback chain is always queried first; duplicate fixture
+    # identities retain its metadata unless the supplement supplies a result
+    # where the existing record has none.
+    for provider in _supplement_provider_order(competition_code):
+        if provider in attempted_providers:
+            continue
+        configured, credential_name = provider_configuration(provider, competition_code)
+        if not configured:
+            record_provider_diagnostic(
+                competition_code, provider, "not_configured",
+                error=f"{credential_name} is missing, disabled, or not mapped",
+                match_date=match_date,
+            )
+            continue
+        try:
+            matches = _dispatch_explicit_provider(provider, competition_code, match_date) or []
+        except Exception as exc:
+            record_provider_diagnostic(
+                competition_code, provider, "error", error=exc, match_date=match_date,
+            )
+            logger.warning(
+                "Supplement fixture provider %s failed for %s on %s: %s",
+                provider, competition_code, match_date, exc,
+            )
+            continue
+
+        valid_count = sum(1 for match in matches if _fixture_key(match) is not None)
+        record_provider_diagnostic(
+            competition_code, provider,
+            "fixtures_found" if valid_count else "empty_response",
+            fixture_count=valid_count, match_date=match_date,
+        )
+        for match in matches:
+            key = _matching_fixture_key(merged, match)
+            if key is None:
+                continue
+            existing = merged.get(key)
+            if existing is None or (_has_result(match) and not _has_result(existing)):
+                merged[key] = match
 
     return sorted(
         merged.values(),

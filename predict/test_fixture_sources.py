@@ -563,3 +563,93 @@ class AfricanLeagueLookupValidationTests(TestCase):
     def test_malformed_lookup_rows_do_not_raise_or_accept_invalid_ids(self, lookup, cache_get, cache_set):
         from predict.providers import af_league_id
         self.assertIsNone(af_league_id("KEN", 2026))
+
+class FixtureProviderSupplementTests(TestCase):
+    @patch("predict.fixture_sources.record_provider_diagnostic")
+    @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
+    @patch("predict.fixture_sources._supplement_provider_order", return_value=["RSSSF"])
+    @patch("predict.fixture_sources._provider_order", return_value=["OF"])
+    @patch("predict.fixture_sources._dispatch_explicit_provider")
+    def test_supplement_adds_missing_fixtures_without_replacing_primary_metadata(
+        self, dispatch, provider_order, supplement_order, configuration, record
+    ):
+        primary = {
+            "id": "of-primary",
+            "utcDate": "2026-11-27T15:00:00Z",
+            "status": "TIMED",
+            "homeTeam": {"name": "Alpha FC", "crest": "primary-crest.png"},
+            "awayTeam": {"name": "Beta"},
+            "score": {"fullTime": {"home": None, "away": None}},
+        }
+        duplicate = {
+            "id": "rsssf-duplicate",
+            "utcDate": "2026-11-27",
+            "status": "TIMED",
+            "homeTeam": {"name": "Alpha", "crest": None},
+            "awayTeam": {"name": "Beta"},
+            "score": {"fullTime": {"home": None, "away": None}},
+        }
+        missing = {
+            "id": "rsssf-missing",
+            "utcDate": "2026-11-27",
+            "status": "TIMED",
+            "homeTeam": {"name": "Gamma"},
+            "awayTeam": {"name": "Delta"},
+            "score": {"fullTime": {"home": None, "away": None}},
+        }
+        dispatch.side_effect = [[primary], [duplicate, missing]]
+
+        matches = fetch_fixture_matches_by_date(None, "UGA", "2026-11-27")
+
+        self.assertEqual(len(matches), 2)
+        by_id = {match["id"]: match for match in matches}
+        self.assertIn("of-primary", by_id)
+        self.assertIn("rsssf-missing", by_id)
+        self.assertNotIn("rsssf-duplicate", by_id)
+        self.assertEqual(by_id["of-primary"]["homeTeam"]["crest"], "primary-crest.png")
+        self.assertEqual(dispatch.call_count, 2)
+
+    @patch("predict.fixture_sources.fetch_fixture_matches_by_date")
+    @patch("predict.fixture_sources._supplement_season_matches")
+    @patch("predict.fixture_sources.provider_configuration", return_value=(True, ""))
+    @patch("predict.fixture_sources._supplement_provider_order", return_value=["RSSSF"])
+    @patch("predict.fixture_sources.get_provider", return_value="OF")
+    @patch("predict.fixture_sources.supports_openfootball", return_value=True)
+    @patch("predict.fixture_sources.supports_open_matchday", return_value=False)
+    @patch("predict.providers.of_current_matches")
+    def test_supplement_season_feed_discovers_dates_missing_from_primary(
+        self, of_matches, supports_om, supports_of, provider, supplement_order,
+        configuration, supplement_matches, fetch_by_date
+    ):
+        from datetime import date, timedelta
+        today = date.today()
+        primary_day = today.isoformat()
+        supplement_day = (today + timedelta(days=1)).isoformat()
+        of_matches.return_value = [{
+            "utcDate": f"{primary_day}T15:00:00Z",
+            "status": "TIMED",
+            "homeTeam": {"name": "Primary FC"},
+            "awayTeam": {"name": "Primary Visitor"},
+        }]
+        supplement_matches.return_value = [{
+            "utcDate": f"{supplement_day}T15:00:00Z",
+            "status": "TIMED",
+            "homeTeam": {"name": "Supplement FC"},
+            "awayTeam": {"name": "Supplement Visitor"},
+        }]
+        fetch_by_date.side_effect = lambda key, code, day: [{
+            "utcDate": f"{day}T15:00:00Z",
+            "status": "TIMED",
+            "homeTeam": {"name": "Home"},
+            "awayTeam": {"name": "Away"},
+        }]
+
+        from predict.fixture_sources import fetch_upcoming_fixture_groups
+        grouped = fetch_upcoming_fixture_groups(None, "UGA", days_ahead=7)
+
+        self.assertEqual(set(grouped), {primary_day, supplement_day})
+        self.assertEqual(
+            [call.args[2] for call in fetch_by_date.call_args_list],
+            [primary_day, supplement_day],
+        )
+
