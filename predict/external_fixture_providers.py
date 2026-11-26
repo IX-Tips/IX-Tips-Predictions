@@ -47,9 +47,9 @@ _FC_COUNTRIES = {
 # to competitions in the African coverage set; do not guess country codes.
 _SE_COUNTRIES = {
     "ALG": "DZ", "ANG": "AO", "BEN": "BJ", "BFA": "BF", "BDI": "BI",
-    "EGY": "EG", "GHA": "GH", "KEN": "KE", "LBR": "LR", "MWI": "MW",
-    "MAR": "MA", "MTN": "MR", "NGA": "NG", "RWA": "RW", "SEN": "SN",
-    "ZAF": "ZA", "TZA": "TZ", "UGA": "UG", "ZMB": "ZM", "ZWE": "ZW",
+    "EGY": "EG", "GHA": "GH", "LBR": "LR", "MWI": "MW",
+    "MAR": "MA", "MTN": "MR", "RWA": "RW", "SEN": "SN",
+    "ZAF": "ZA", "TZA": "TZ", "ZMB": "ZM", "ZWE": "ZW",
 }
 
 def _norm(value):
