@@ -268,6 +268,31 @@ class ProviderDiagnosticsTests(TestCase):
 
 
 
+    @patch("predict.providers.cache.set")
+    @patch("predict.providers.cache.get", side_effect=[None, {"endpoint": "leagues", "status": "error"}])
+    @patch("predict.providers._af_get", return_value=[])
+    @patch("predict.providers.APIFOOTBALL_LEAGUE_SEARCH", {"ALG": ("Algeria", "Ligue 1")})
+    def test_af_league_lookup_does_not_cache_plan_error_as_missing_league(
+        self, lookup, cache_get, cache_set
+    ):
+        from predict.providers import af_league_id
+
+        self.assertIsNone(af_league_id("ALG", 2026))
+        cache_set.assert_not_called()
+
+    @patch("predict.providers.cache.set")
+    @patch("predict.providers.cache.get", side_effect=[None, {"endpoint": "fixtures", "status": "error"}])
+    @patch("predict.providers._af_get", return_value=[])
+    @patch("predict.providers.af_league_id", return_value=123)
+    def test_af_season_fetch_does_not_cache_plan_error_as_empty_season(
+        self, league_lookup, fixture_fetch, cache_get, cache_set
+    ):
+        from predict.providers import _af_fetch_season_matches
+
+        self.assertEqual(_af_fetch_season_matches("ALG", 2026), [])
+        cache_set.assert_not_called()
+
+
 class BulkFixtureDiscoveryTests(TestCase):
     @patch("predict.fixture_sources.fetch_fixture_matches_by_date")
     @patch("predict.providers._om_current_matches")
