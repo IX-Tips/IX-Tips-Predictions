@@ -4,10 +4,12 @@ Multi-provider fixture aggregation.
 Historical match ingestion and upcoming fixture discovery are deliberately
 separate. COMPETITION_PROVIDERS continues to choose the primary source for
 historical data and league metadata. Fixture sources can be configured
-independently with FIXTURE_PROVIDER_ORDER.
+independently with FIXTURE_PROVIDER_ORDER. RSSSF may be enabled as an additive
+fixture source with FIXTURE_PROVIDER_SUPPLEMENTS, subject to its permission gate.
 
 Example:
-    FIXTURE_PROVIDER_ORDER='{"BEL":["UK","AF"],"TUR":["UK","AF"]}'
+    FIXTURE_PROVIDER_ORDER='{"BEL":["UK","AF"]}'
+    FIXTURE_PROVIDER_SUPPLEMENTS='{"UGA":["RSSSF"]}'
 """
 import json
 import logging
@@ -279,7 +281,9 @@ def _supplement_provider_order(competition_code):
     if not isinstance(configured, (list, tuple)):
         return []
 
-    allowed = {"FD", "UK", "LF", "AF", "OM", "OF", "NPFL", "FKF", "RSSSF"}
+    # RSSSF is currently the only season-level supplement adapter. Keep this
+    # allowlist narrow so unsupported providers cannot silently appear enabled.
+    allowed = {"RSSSF"}
     return list(dict.fromkeys(
         str(provider).strip().upper()
         for provider in configured
