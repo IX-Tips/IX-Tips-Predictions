@@ -11,7 +11,6 @@ from predict.external_fixture_providers import (
     FC_KEY,
     _FC_COUNTRIES,
     _FC_NAME_ALIASES,
-    _FC_SLUG_OVERRIDES,
     _fc_catalog,
     _fc_league_slug,
     _norm,
