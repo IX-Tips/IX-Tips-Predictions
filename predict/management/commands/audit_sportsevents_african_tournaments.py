@@ -7,10 +7,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from predict.constants import COMPETITIONS
 from predict.external_fixture_providers import (
-    _SE_COUNTRIES,
-    _SE_NAME_ALIASES,
-    _norm,
-    _se_tournaments,
+    _SE_COUNTRIES, _SE_NAME_ALIASES, _norm, _se_tournaments,
 )
 
 
@@ -26,6 +23,15 @@ def _tournament_name(row):
 
 def _tournament_id(row):
     return row.get("id") or row.get("tournamentId")
+
+
+def _matching_tournaments(code, rows):
+    aliases = _SE_NAME_ALIASES.get(code) or (COMPETITIONS[code],)
+    wanted = {_norm(alias) for alias in aliases if alias}
+    return [
+        row for row in rows
+        if _norm(_tournament_name(row)) in wanted and _tournament_id(row)
+    ]
 
 
 class Command(BaseCommand):
@@ -56,22 +62,18 @@ class Command(BaseCommand):
             "READ-ONLY TOURNAMENT AUDIT: country catalogues only; "
             "no /events or fixture endpoints called."
         ))
-        mapped = missing = ambiguous = 0
+        mapped = missing = ambiguous = errors = 0
         for code in codes:
-            country = _SE_COUNTRIES[code]
-            wanted = _norm(_SE_NAME_ALIASES.get(code) or COMPETITIONS[code])
             try:
-                rows = _se_tournaments(country)
+                rows = _se_tournaments(_SE_COUNTRIES[code])
             except Exception as exc:
+                errors += 1
                 self.stdout.write(
                     f"{code} | {COMPETITIONS[code]} | CATALOGUE_ERROR | {str(exc)[:250]}"
                 )
                 continue
 
-            candidates = [
-                row for row in rows
-                if _norm(_tournament_name(row)) == wanted and _tournament_id(row)
-            ]
+            candidates = _matching_tournaments(code, rows)
             if len(candidates) == 1:
                 mapped += 1
                 result = f"MAPPED | id={_tournament_id(candidates[0])} | {_tournament_name(candidates[0])}"
@@ -94,8 +96,8 @@ class Command(BaseCommand):
 
         self.stdout.write("")
         self.stdout.write(self.style.SUCCESS(
-            f"SUMMARY: mapped={mapped}; no_exact_match={missing}; ambiguous={ambiguous}; "
-            f"audited={len(codes)}"
+            f"SUMMARY: mapped={mapped}; no_exact_match={missing}; "
+            f"ambiguous={ambiguous}; catalogue_errors={errors}; audited={len(codes)}"
         ))
         self.stdout.write(
             "NOTE: Kenya, Uganda and Nigeria are not included in the default "
