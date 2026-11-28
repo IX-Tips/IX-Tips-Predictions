@@ -65,6 +65,49 @@ class ExternalFixtureProviderTests(TestCase):
 
     @patch("predict.external_fixture_providers.cache.get", return_value=None)
     @patch("predict.external_fixture_providers.cache.set")
+    @patch("predict.external_fixture_providers._fc_catalog", return_value=[
+        {"league": "algir1", "name": "Ligue 1"}
+    ])
+    @patch("predict.external_fixture_providers._get_json", return_value={
+        "league": "algir1", "count": 0, "matches": [],
+        "next_fixture_date": "2026-11-30",
+        "note": "No fixtures in the next 3 days.",
+    })
+    def test_football_charts_empty_response_uses_short_cache(
+        self, get_json, catalog, cache_set, cache_get
+    ):
+        from predict.external_fixture_providers import FC_EMPTY_FIXTURE_TTL
+        with patch("predict.external_fixture_providers.FC_KEY", "test-key"):
+            self.assertEqual(
+                football_charts_fetch_matches_by_date("ALG", "2026-11-30"), []
+            )
+        cache_set.assert_called_once()
+        self.assertEqual(cache_set.call_args.kwargs["timeout"], FC_EMPTY_FIXTURE_TTL)
+        self.assertEqual(FC_EMPTY_FIXTURE_TTL, 45 * 60)
+
+    @patch("predict.external_fixture_providers.cache.get", return_value=None)
+    @patch("predict.external_fixture_providers.cache.set")
+    @patch("predict.external_fixture_providers._fc_catalog", return_value=[
+        {"league": "morocco", "name": "Botola Pro"}
+    ])
+    @patch("predict.external_fixture_providers._get_json", return_value={
+        "league": "morocco", "count": 1, "matches": [{
+            "slug": "morocco/test-match", "home_team": "Home", "away_team": "Away",
+            "match_date": "2026-11-30", "time": "18:00", "status": "scheduled",
+        }],
+    })
+    def test_football_charts_populated_response_keeps_long_cache(
+        self, get_json, catalog, cache_set, cache_get
+    ):
+        from predict.external_fixture_providers import FC_FIXTURE_TTL
+        with patch("predict.external_fixture_providers.FC_KEY", "test-key"):
+            matches = football_charts_fetch_matches_by_date("MAR", "2026-11-30")
+        self.assertEqual(len(matches), 1)
+        cache_set.assert_called_once()
+        self.assertEqual(cache_set.call_args.kwargs["timeout"], FC_FIXTURE_TTL)
+
+    @patch("predict.external_fixture_providers.cache.get", return_value=None)
+    @patch("predict.external_fixture_providers.cache.set")
     @patch("predict.external_fixture_providers._se_tournament_id", return_value=7)
     @patch("predict.external_fixture_providers._get_json", side_effect=RuntimeError("429 quota"))
     def test_sportsevents_quota_error_is_not_cached_as_empty(

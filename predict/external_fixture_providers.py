@@ -23,6 +23,7 @@ FC_KEY = os.environ.get("FOOTBALL_CHARTS_API_KEY") or os.environ.get("FC_API_KEY
 SE_BASE_URL = os.environ.get("SPORTEVENTS_BASE_URL", "https://sportsevents24.com/api/v1").rstrip("/")
 FC_CATALOG_TTL = 60 * 60 * 24
 FC_FIXTURE_TTL = 60 * 60 * 23
+FC_EMPTY_FIXTURE_TTL = 60 * 45
 SE_TOURNAMENT_TTL = 60 * 60 * 24
 SE_FIXTURE_TTL = 60 * 60 * 8
 
@@ -153,8 +154,25 @@ def football_charts_fetch_matches_by_date(competition_code, match_date):
             parsed for parsed in (_parse_fc_match(row, competition_code) for row in rows)
             if parsed
         ]
-        # Cache the complete upcoming window for almost a day: Football Charts refreshes its feed daily and the free account is limited to 200 calls/day.
-        cache.set(cache_key, cached, timeout=FC_FIXTURE_TTL)
+        if not cached:
+            # An empty response is often temporary: Football Charts may publish
+            # fixtures after its daily feed refresh. Do not suppress those updates
+            # for almost a full day.
+            logger.info(
+                "Football Charts returned no fixtures for %s (%s): count=%s, "
+                "next_fixture_date=%s, note=%s",
+                competition_code,
+                slug,
+                payload.get("count"),
+                payload.get("next_fixture_date"),
+                str(payload.get("note") or "")[:300],
+            )
+            cache_ttl = FC_EMPTY_FIXTURE_TTL
+        else:
+            # Retain the long cache for populated windows to conserve the free
+            # account's daily request quota.
+            cache_ttl = FC_FIXTURE_TTL
+        cache.set(cache_key, cached, timeout=cache_ttl)
     return [match for match in cached if (match.get("utcDate") or "")[:10] == day.isoformat()]
 
 def _se_tournaments(country):
