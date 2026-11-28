@@ -187,31 +187,49 @@ def _se_tournaments(country):
     cache.set(key, rows, timeout=SE_TOURNAMENT_TTL)
     return rows
 
+# Explicit catalogue names confirmed by the read-only SportsEvents24 audit.
+# Keep aliases exact after normalization; do not fuzzy-match cups, youth or
+# women's competitions into senior domestic leagues.
 _SE_NAME_ALIASES = {
-    "ALG": "Ligue 1", "ANG": "Girabola", "BEN": "Ligue Pro",
-    "BFA": "Ligue 1", "BDI": "Ligue A", "EGY": "Premier League",
-    "GHA": "Premier League", "KEN": "FKF Premier League",
-    "LBR": "First Division", "MWI": "Super League", "MAR": "Botola Pro",
-    "MTN": "Ligue 1", "NGA": "NPFL", "RWA": "Premier League",
-    "SEN": "Ligue 1", "ZAF": "Premiership", "TZA": "Ligi Kuu Bara",
-    "UGA": "Premier League", "ZMB": "Super League",
-    "ZWE": "Premier Soccer League",
+    "ALG": ("Ligue 1",),
+    "ANG": ("Girabola",),
+    "BEN": ("Ligue Pro",),
+    "BFA": ("Ligue 1",),
+    "BDI": ("Ligue A",),
+    "EGY": ("Premier League", "Egyptian Premier League 2026/2027"),
+    "GHA": ("Premier League", "Ghana Premier League 2026/2027"),
+    "KEN": ("FKF Premier League",),
+    "LBR": ("First Division",),
+    "MWI": ("Super League", "FDH Bank Premiership", "FDH Bank Premiership 2026/2027"),
+    "MAR": ("Botola Pro", "Botola Pro D1 2026/2027"),
+    "MTN": ("Ligue 1", "FFRIM Super D1", "FFRIM Super D1 2026/2027"),
+    "NGA": ("NPFL",),
+    "RWA": ("Premier League",),
+    "SEN": ("Ligue 1", "Ligue 1 Sénégal", "Ligue 1 Sénégal 2026/2027"),
+    "ZAF": ("Premiership", "Betway Premiership", "Betway Premiership 2026/27"),
+    "TZA": ("Ligi Kuu Bara", "NBC Premier League", "NBC Premier League 2026/27"),
+    "UGA": ("Premier League",),
+    "ZMB": ("Super League",),
+    "ZWE": ("Premier Soccer League",),
 }
 
 def _se_tournament_id(competition_code):
-    country = _SE_COUNTRIES.get(str(competition_code or "").upper())
+    code = str(competition_code or "").upper()
+    country = _SE_COUNTRIES.get(code)
     if not country:
         return None
-    code = str(competition_code).upper()
-    wanted = _norm(_SE_NAME_ALIASES.get(code) or COMPETITIONS.get(code))
+    aliases = _SE_NAME_ALIASES.get(code) or (COMPETITIONS.get(code),)
+    wanted = {_norm(alias) for alias in aliases if alias}
     rows = _se_tournaments(country)
     candidates = []
     for row in rows:
         title = row.get("name") or row.get("tournament") or row.get("title") or row.get("tournamentName") or row.get("tournament_name")
         if isinstance(title, dict):
             title = title.get("name") or title.get("title")
-        if _norm(title) == wanted:
+        if _norm(title) in wanted:
             candidates.append(row)
+    # South Africa currently exposes duplicate/season-labelled Betway
+    # Premiership entries. Refuse to choose until fixture feeds are compared.
     if len(candidates) == 1:
         return candidates[0].get("id") or candidates[0].get("tournamentId")
     # Avoid fuzzy tournament selection: it can silently mix cups and leagues.
