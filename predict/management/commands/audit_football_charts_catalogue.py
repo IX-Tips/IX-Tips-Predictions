@@ -11,6 +11,7 @@ from predict.external_fixture_providers import (
     FC_KEY,
     _FC_COUNTRIES,
     _FC_NAME_ALIASES,
+    _FC_SLUG_OVERRIDES,
     _fc_catalog,
     _fc_league_slug,
     _norm,
@@ -52,7 +53,8 @@ class Command(BaseCommand):
 
         codes = sorted(COMPETITIONS)
         if options["african_only"]:
-            codes = [code for code in codes if code in _FC_COUNTRIES]
+            african_codes = set(_FC_COUNTRIES) | set(_FC_SLUG_OVERRIDES)
+            codes = [code for code in codes if code in african_codes]
 
         claimed_slugs = set()
         mapped = unmapped = ambiguous = 0
@@ -99,7 +101,7 @@ class Command(BaseCommand):
         self.stdout.write("")
         self.stdout.write(
             self.style.SUCCESS(
-                f"SUMMARY: mapped={mapped}; unmapped_or_ambiguous={unmapped}; "
+                f"SUMMARY: mapped={mapped}; unmapped={unmapped}; "
                 f"ambiguous={ambiguous}; catalogue_unclaimed={len(unclaimed)}"
             )
         )
