@@ -41,6 +41,29 @@ class ExternalFixtureProviderTests(TestCase):
             from predict.external_fixture_providers import _fc_league_slug
             self.assertEqual(_fc_league_slug("ALG"), "algir1")
 
+    def test_audited_sportsevents_aliases_map_unique_senior_leagues(self):
+        cases = [
+            ("EGY", [{"id": 151263, "name": "Egyptian Premier League 2026/2027"}], 151263),
+            ("GHA", [{"id": 151267, "name": "Ghana Premier League 2026/2027"}], 151267),
+            ("MAR", [{"id": 151721, "name": "Botola Pro D1 2026/2027"}], 151721),
+            ("MTN", [{"id": 151640, "name": "FFRIM Super D1 2026/2027"}], 151640),
+            ("MWI", [{"id": 3324, "name": "FDH Bank Premiership 2026/2027"}], 3324),
+            ("SEN", [{"id": 171201, "name": "Ligue 1 Sénégal 2026/2027"}], 171201),
+            ("TZA", [{"id": 151680, "name": "NBC Premier League 2026/27"}], 151680),
+        ]
+        for code, rows, expected_id in cases:
+            with self.subTest(code=code), patch(
+                "predict.external_fixture_providers._se_tournaments", return_value=rows
+            ):
+                self.assertEqual(_se_tournament_id(code), expected_id)
+
+    def test_south_africa_duplicate_premiership_entries_remain_unmapped(self):
+        with patch("predict.external_fixture_providers._se_tournaments", return_value=[
+            {"id": 9146, "name": "Betway Premiership"},
+            {"id": 151664, "name": "Betway Premiership 2026/27"},
+        ]):
+            self.assertIsNone(_se_tournament_id("ZAF"))
+
     @patch("predict.external_fixture_providers._se_tournaments", return_value=[
         {"id": 11, "name": "FKF Premier League"}
     ])
